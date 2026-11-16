@@ -72,6 +72,13 @@ tbody tr.sel td{background:var(--accent-soft)}
 td.nome{max-width:280px;overflow:hidden;text-overflow:ellipsis}
 .sku{font-family:var(--f-num);font-weight:500}
 .sug{font-weight:600;color:var(--wine)}
+.chip.promo{background:#FBF1DC;color:var(--wine);margin-left:6px;font-family:var(--f-body);font-size:11px;border:1px solid var(--gold)}
+td.ck,th.ck{width:30px;padding-right:0}
+select.cell-sel{font-size:13px;padding:3px 6px;border:1px dashed var(--line);background:transparent;max-width:150px}
+select.cell-sel:hover{border-color:var(--gold)}
+.bulk{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 14px;border:1px solid var(--gold);background:#FBF1DC;border-radius:10px}
+.promo-cmp{display:grid;gap:4px;padding:8px 10px;border-radius:8px;background:var(--sunk);font-size:13px}
+.promo-cmp span{display:flex;justify-content:space-between;gap:8px}
 input.cell{width:96px;padding:3px 6px;font-size:13px;border:1px dashed var(--line);background:transparent}
 input.cell:hover{border-color:var(--gold)}
 input.cell:focus{border:1px solid var(--wine);background:var(--surface)}
@@ -143,9 +150,15 @@ const CANAIS=[
   {id:'tiktok',nome:'TikTok Shop',tipo:'faixas'}];
 function pesoCobrado(p){const cub=(+p.L||0)*(+p.C||0)*(+p.P||0)/6000;return Math.max(+p.peso||0,cub);}
 function idxPeso(frete,kg){let i=0;frete.linhas.forEach((l,k)=>{if(kg>=l.ini)i=k;});return i;}
-function cfgEfetiva(cli,canal,prod){
+function hojeISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function grupoML(cli,prod){const gs=cli.tarifasML||[];return gs.find(g=>g.id===prod.tarifaML)||gs[0]||null;}
+function promoAtiva(prod,canal,hoje){const pr=(prod.promoML||{})[canal];if(!pr||!(+pr.reducao>0))return null;if(pr.ate&&pr.ate<hoje)return null;return pr;}
+function cfgEfetiva(cli,canal,prod,opt={}){
   const c=cli.canais[canal]||{};const ov=(prod.overrides||{})[canal]||{};
-  return {ads:ov.ads??c.ads??0,comissao:ov.comissao,desconto:+ov.desconto||0,c};
+  let com=ov.comissao;
+  if(com==null&&canal.startsWith('ml_')){const g=grupoML(cli,prod);if(g)com=canal==='ml_premium'?+g.premium:+g.classico;}
+  const pr=opt.semPromo?null:promoAtiva(prod,canal,opt.hoje||hojeISO());
+  return {ads:ov.ads??c.ads??0,comissao:com,descFixo:+ov.desconto||0,promo:pr,desconto:(+ov.desconto||0)+(pr?+pr.reducao:0),c};
 }
 function bandas(cli,canal,prod,frete){
   const def=CANAIS.find(x=>x.id===canal);const e=cfgEfetiva(cli,canal,prod);
@@ -158,9 +171,9 @@ function bandas(cli,canal,prod,frete){
   return (e.c.faixas||[]).slice().sort((a,b)=>a.ini-b.ini).map(f=>({ini:+f.ini,nome:'',pct:e.comissao??+f.pct,fixo:(+f.fixo||0)+ff,rot:'Taxa fixa'+(ff?' + frete':'')}));
 }
 function bandaDe(bs,P){let b=bs[0];for(const x of bs)if(P>=x.ini)b=x;return b;}
-function precoSugerido(cli,canal,prod,frete,m){
+function precoSugerido(cli,canal,prod,frete,m,opt={}){
   const bs=bandas(cli,canal,prod,frete);if(!bs.length)return null;
-  const e=cfgEfetiva(cli,canal,prod);
+  const e=cfgEfetiva(cli,canal,prod,opt);
   const base=(+cli.imposto||0)+(+cli.despesas||0)+(+e.ads||0);
   const custo=(+prod.cmv||0)+(+prod.embalagem||0)-e.desconto;
   let best=null;
@@ -172,11 +185,11 @@ function precoSugerido(cli,canal,prod,frete,m){
   });
   return best;
 }
-function dre(cli,canal,prod,frete,P){
+function dre(cli,canal,prod,frete,P,opt={}){
   const bs=bandas(cli,canal,prod,frete);if(!bs.length||!(P>0))return null;
-  const b=bandaDe(bs,P);const e=cfgEfetiva(cli,canal,prod);
+  const b=bandaDe(bs,P);const e=cfgEfetiva(cli,canal,prod,opt);
   const r={preco:P,imposto:P*(+cli.imposto||0),despesas:P*(+cli.despesas||0),comissao:P*b.pct-e.desconto,
-    ads:P*(+e.ads||0),fixo:b.fixo,rotFixo:b.rot,faixa:b.nome,cmv:+prod.cmv||0,emb:+prod.embalagem||0,pctCom:b.pct,pctAds:+e.ads||0};
+    ads:P*(+e.ads||0),fixo:b.fixo,promo:e.promo,descFixo:e.descFixo,rotFixo:b.rot,faixa:b.nome,cmv:+prod.cmv||0,emb:+prod.embalagem||0,pctCom:b.pct,pctAds:+e.ads||0};
   r.lucro=P-(r.imposto+r.despesas+r.comissao+r.ads+r.fixo+r.cmv+r.emb);r.margem=r.lucro/P;return r;
 }
 </script>
@@ -189,14 +202,19 @@ const n2=v=>v==null||!isFinite(v)?'':(+v).toLocaleString('pt-BR',{minimumFractio
 const pct=(v,d=1)=>v==null||!isFinite(v)?'—':(v*100).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d})+'%';
 const pctIn=v=>v==null?'':(+(v*100).toFixed(4)).toLocaleString('pt-BR',{maximumFractionDigits:4});
 const parseN=s=>{if(s==null)return NaN;s=String(s).trim().replace(/R\$|\s|%/g,'');if(!s)return NaN;if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');return parseFloat(s);};
-const PADRAO={imposto:0.10,despesas:0.057,margem:0.15,canais:{
+const PADRAO={imposto:0.10,despesas:0.057,margem:0.15,tarifasML:[{id:'a',nome:'Padrão',premium:0.165,classico:0.115}],canais:{
   ml_premium:{ativo:true,comissao:0.165,ads:0.04},
   ml_classico:{ativo:true,comissao:0.115,ads:0.04},
   shopee:{ativo:false,ads:0.04,freteFixo:0,faixas:[{ini:0,pct:0.20,fixo:4.5},{ini:80,pct:0.14,fixo:16},{ini:100,pct:0.14,fixo:20},{ini:200,pct:0.14,fixo:26}]},
   tiktok:{ativo:false,ads:0,freteFixo:0,faixas:[{ini:0,pct:0.10,fixo:4}]}}};
 
 const S={db:null,clientes:[],cid:null,produtos:[],frete:null,busca:'',sel:null,canalDet:'ml_premium',sim:'',view:'precos',
-  loaded:{cli:false,prod:false,frete:false},erro:null,unsubProd:null,pendente:null,editavel:true};
+  loaded:{cli:false,prod:false,frete:false},erro:null,unsubProd:null,pendente:null,editavel:true,marcados:new Set()};
+const dataBR=iso=>iso?iso.split('-').reverse().slice(0,2).join('/'):'';
+const dataBRc=iso=>iso?iso.split('-').reverse().join('/'):'';
+function temML(c){return canaisAtivos(c).some(k=>k.tipo==='ml');}
+function chipPromo(p){const hoje=hojeISO();const at=['ml_premium','ml_classico'].map(k=>promoAtiva(p,k,hoje)).filter(Boolean);if(!at.length)return '';const ate=at.map(x=>x.ate).sort()[0];return `<span class="chip promo" title="Promoção ML com redução de tarifa">promo até ${dataBR(ate)}</span>`;}
+function selTarifa(c,p,attrs){return `<select ${attrs}>${(c.tarifasML||[]).map(g=>`<option value="${esc(g.id)}"${grupoML(c,p)?.id===g.id?' selected':''}>${esc(g.nome)}</option>`).join('')}</select>`;}
 function cli(){return S.clientes.find(c=>c.id===S.cid)||null;}
 function canaisAtivos(c){return CANAIS.filter(k=>c.canais?.[k.id]?.ativo);}
 
@@ -236,26 +254,29 @@ function viewPrecos(c){
     <div class="grp"><div class="margem-box"><label class="label" for="inMargem">Margem líquida<br>desejada</label><input id="inMargem" inputmode="decimal" value="${pctIn(m)}" aria-describedby="hm"><span class="num" id="hm">%</span></div></div></div>`;
   if(!S.produtos.length)return head+`<div class="panel empty"><h2>Nenhum produto ainda</h2><p>Cadastre produtos ou importe da sua planilha na aba Produtos.</p><a class="btn" href="#produtos">Ir para Produtos</a></div>`;
   if(!S.frete&&ativos.some(a=>a.id.startsWith('ml')))return head+`<div class="state">Carregando tabela de frete do Mercado Livre…</div>`;
-  const lista=filtrados();
+  const lista=filtrados();const ml=temML(c);const nFix=ml?6:5;
   let abaixo=0,inv=0;
   const rows=lista.map(p=>{
     const cells=ativos.map(k=>{
       const sug=precoSugerido(c,k.id,p,S.frete,m);if(sug==null)inv++;
       const at=p.precoAtual?.[k.id];const d=at?dre(c,k.id,p,S.frete,at):null;
       if(d&&d.margem<m-0.0005)abaixo++;
-      const ov=(p.overrides||{})[k.id];
-      return `<td class="r bl num sug">${sug==null?'<span class="chip bad">inviável</span>':brl(sug)}${ov&&Object.keys(ov).length?'<span class="tag" title="Taxa específica deste produto">*</span>':''}</td>
+      const ov={...((p.overrides||{})[k.id]||{})};delete ov.comissao;
+      return `<td class="r bl num sug">${sug==null?'<span class="chip bad">inviável</span>':brl(sug)}${Object.keys(ov).length?'<span class="tag" title="ADS ou desconto específico deste produto">*</span>':''}</td>
         <td class="r"><input class="n cell" id="pa_${esc(p.id)}_${k.id}" data-ppa="${esc(p.id)}|${k.id}" inputmode="decimal" value="${at?n2(at):''}" placeholder="—" aria-label="Preço de venda ${esc(k.nome)} de ${esc(p.sku)}"></td><td class="r">${d?chipMargem(d.margem,m):'<span class="muted">—</span>'}</td>`;}).join('');
-    return `<tr data-id="${esc(p.id)}" class="${S.sel===p.id?'sel':''}"><td class="sku">${esc(p.sku)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
-      <td class="r num">${n2(pesoCobrado(p))} kg</td><td class="r"><input class="n cell" id="cmv_${esc(p.id)}" data-pcmv="${esc(p.id)}" inputmode="decimal" value="${n2(+p.cmv)}" aria-label="CMV de ${esc(p.sku)}"></td>${cells}</tr>`;}).join('');
+    return `<tr data-id="${esc(p.id)}" class="${S.sel===p.id?'sel':''}"><td class="ck"><input type="checkbox" id="ck_${esc(p.id)}" data-ck="${esc(p.id)}" ${S.marcados.has(p.id)?'checked':''} aria-label="Selecionar ${esc(p.sku)}"></td><td class="sku">${esc(p.sku)}${chipPromo(p)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
+      <td class="r num">${n2(pesoCobrado(p))} kg</td><td class="r"><input class="n cell" id="cmv_${esc(p.id)}" data-pcmv="${esc(p.id)}" inputmode="decimal" value="${n2(+p.cmv)}" aria-label="CMV de ${esc(p.sku)}"></td>${ml?`<td>${selTarifa(c,p,`class="cell-sel" id="tg_${esc(p.id)}" data-ptg="${esc(p.id)}" aria-label="Tarifa ML de ${esc(p.sku)}"`)}</td>`:''}${cells}</tr>`;}).join('');
   const sum=`<div class="summary"><span><b>${lista.length}</b> de ${S.produtos.length} anúncios</span><span><b>${abaixo}</b> preços atuais abaixo da meta</span>${inv?`<span><b>${inv}</b> sem preço possível (margem alta demais)</span>`:''}<span>* taxa específica do produto</span><span>✎ CMV e preço de venda são editáveis direto na tabela</span></div>`;
-  const table=`<div class="panel scroll"><table><thead><tr><th colspan="4"></th>${ativos.map(k=>`<th class="grp" colspan="3">${esc(k.nome)}</th>`).join('')}</tr>
-    <tr><th>SKU</th><th>Produto</th><th class="r">Peso cobrado</th><th class="r">CMV (R$) ✎</th>${ativos.map(()=>`<th class="r bl">Sugerido</th><th class="r">Preço de venda ✎</th><th class="r">Margem atual</th>`).join('')}</tr></thead>
-    <tbody>${rows||`<tr><td colspan="${4+ativos.length*3}" class="muted">Nenhum produto encontrado para “${esc(S.busca)}”.</td></tr>`}</tbody></table></div>`;
+  const table=`<div class="panel scroll"><table><thead><tr><th colspan="${nFix}"></th>${ativos.map(k=>`<th class="grp" colspan="3">${esc(k.nome)}</th>`).join('')}</tr>
+    <tr><th class="ck"><input type="checkbox" id="ckAll" aria-label="Selecionar todos" ${lista.length&&lista.every(p=>S.marcados.has(p.id))?'checked':''}></th><th>SKU</th><th>Produto</th><th class="r">Peso cobrado</th><th class="r">CMV (R$) ✎</th>${ml?'<th>Tarifa ML ✎</th>':''}${ativos.map(()=>`<th class="r bl">Sugerido</th><th class="r">Preço de venda ✎</th><th class="r">Margem atual</th>`).join('')}</tr></thead>
+    <tbody>${rows||`<tr><td colspan="${nFix+ativos.length*3}" class="muted">Nenhum produto encontrado para “${esc(S.busca)}”.</td></tr>`}</tbody></table></div>`;
   const tools=`<div class="toolbar"><div class="grp"><input id="inBusca" type="search" placeholder="Buscar SKU, nome ou anúncio" value="${esc(S.busca)}" style="width:260px"></div>
     <div class="grp"><button type="button" onclick="exportar()">Exportar Excel</button></div></div>`;
   const p=S.produtos.find(x=>x.id===S.sel);
-  return head+tools+sum+`<div class="layout ${p?'has-detail':''}"><div style="min-width:0">${table}</div>${p?viewDetalhe(c,p):''}</div>`;
+  const nSel=S.marcados.size;
+  const bulk=nSel?`<div class="bulk"><b>${nSel} selecionado${nSel>1?'s':''}</b>${ml?`<button class="primary" onclick="promoLote()">Aplicar promoção ML</button><button onclick="removerPromoLote()">Remover promoção</button>
+    <label class="sim">Mudar tarifa para ${`<select id="bulkTg"><option value="">escolha…</option>${(c.tarifasML||[]).map(g=>`<option value="${esc(g.id)}">${esc(g.nome)}</option>`).join('')}</select>`}</label>`:''}<button class="link" onclick="S.marcados.clear();render()">Limpar seleção</button></div>`:'';
+  return head+tools+sum+bulk+`<div class="layout ${p?'has-detail':''}"><div style="min-width:0">${table}</div>${p?viewDetalhe(c,p):''}</div>`;
 }
 function viewDetalhe(c,p){
   const ativos=canaisAtivos(c);if(!ativos.find(k=>k.id===S.canalDet))S.canalDet=ativos[0]?.id;
@@ -263,15 +284,19 @@ function viewDetalhe(c,p){
   const sug=precoSugerido(c,k,p,S.frete,m);const simV=parseN(S.sim);
   const P=isFinite(simV)&&simV>0?simV:sug;const d=P?dre(c,k,p,S.frete,P):null;
   const linha=(a,b,neg=true)=>`<div><span>${a}</span><span>${neg?'− ':''}${brl(b)}</span></div>`;
+  const pr=k.startsWith('ml_')?promoAtiva(p,k,hojeISO()):null;const sugSem=pr?precoSugerido(c,k,p,S.frete,m,{semPromo:true}):null;
+  const g=k.startsWith('ml_')?grupoML(c,p):null;
+  const infoML=k.startsWith('ml_')?`<div class="note">Tarifa: <b>${esc(g?.nome||'—')}</b>${pr?` · <span class="chip promo">promoção −${brl(+pr.reducao)} até ${dataBRc(pr.ate)}</span>`:''}</div>${pr?`<div class="promo-cmp"><span>Sugerido <b>com</b> promoção <b class="num">${brl(sug)}</b></span><span>Sugerido <b>sem</b> promoção <b class="num">${brl(sugSem)}</b></span></div>`:''}`:'';
   return `<aside class="panel detail" aria-label="Detalhe do produto">
     <div class="detail-head"><div><div class="sku">${esc(p.sku)}</div><div class="muted" style="white-space:normal">${esc(p.nome)}</div></div><button class="link" onclick="S.sel=null;render()" aria-label="Fechar detalhe">Fechar</button></div>
     <div class="canal-tabs">${ativos.map(x=>`<button aria-pressed="${x.id===k}" onclick="S.canalDet='${x.id}';render()">${esc(x.nome)}</button>`).join('')}</div>
+    ${infoML}
     <div class="sim"><label class="label" for="inSim">Simular preço</label><input id="inSim" class="n" inputmode="decimal" placeholder="${n2(sug)}" value="${esc(S.sim)}">${S.sim?`<button class="link" onclick="S.sim='';render()">usar sugerido</button>`:''}</div>
     ${d?`<div class="dre">
       <div><span><b>Preço de venda</b>${isFinite(simV)&&simV>0?'':' <span class="tag">sugerido</span>'}</span><span><b>${brl(d.preco)}</b></span></div>
       ${linha('Impostos ('+pct(+c.imposto)+')',d.imposto)}
       ${linha('Assessoria / operação ('+pct(+c.despesas)+')',d.despesas)}
-      ${linha('Comissão ('+pct(d.pctCom)+')'+(cfgEfetiva(c,k,p).desconto?' c/ desconto':''),d.comissao)}
+      ${linha('Comissão ('+pct(d.pctCom)+')'+(d.promo?' c/ promoção −'+brl(+d.promo.reducao):'')+(d.descFixo?' c/ desconto −'+brl(d.descFixo):''),d.comissao)}
       ${linha('ADS ('+pct(d.pctAds)+')',d.ads)}
       ${linha(esc(d.rotFixo)+(d.faixa?' · '+esc(d.faixa):''),d.fixo)}
       ${linha('CMV',d.cmv)}${linha('Embalagem',d.emb)}
@@ -286,11 +311,11 @@ function viewProdutos(c){
   const rows=lista.map(p=>`<tr data-edit="${esc(p.id)}"><td class="sku">${esc(p.sku)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
     <td class="num muted">${esc([p.anuncioPremium,p.anuncioClassico].filter(Boolean).join(' · '))}</td>
     <td class="r num">${[p.L,p.C,p.P].map(v=>n2(+v||0).replace(',00','')).join('×')}</td><td class="r num">${n2(+p.peso)}</td><td class="r num">${brl(+p.cmv)}</td><td class="r num">${brl(+p.embalagem)}</td>
-    <td>${Object.keys(p.overrides||{}).length?'<span class="tag" style="margin:0">taxa específica</span>':''}</td></tr>`).join('');
+    <td>${esc(grupoML(c,p)?.nome||'')}${chipPromo(p)}</td></tr>`).join('');
   return `<div class="toolbar"><div><h1>Produtos · ${esc(c.nome)}</h1><p class="sub">${S.produtos.length} anúncios cadastrados. Clique numa linha para editar.</p></div>
     <div class="grp"><button onclick="importar()">Importar do Excel</button><button class="primary" onclick="editarProduto(null)">+ Novo produto</button></div></div>
     <div class="toolbar"><input id="inBusca" type="search" placeholder="Buscar SKU, nome ou anúncio" value="${esc(S.busca)}" style="width:260px"></div>
-    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>SKU</th><th>Produto</th><th>Anúncios</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Embalagem</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>SKU</th><th>Produto</th><th>Anúncios</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Embalagem</th><th>Tarifa ML</th></tr></thead><tbody>${rows}</tbody></table></div>`
     :`<div class="panel empty"><h2>Nenhum produto ainda</h2><p>Cole as linhas da sua planilha em “Importar do Excel” ou cadastre um por um.</p></div>`}`;
 }
 
@@ -299,8 +324,7 @@ function viewParametros(c){
   const fr=S.frete;
   const canalCard=k=>{const cfg=c.canais[k.id]||{};
     let body='';
-    if(k.tipo==='ml'){body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_comissao">Comissão %</label>${inPct('p_'+k.id+'_comissao',cfg.comissao,`data-cp="${k.id}.comissao"`)}</div>
-      <div class="field"><label class="label" for="p_${k.id}_ads">ADS %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div></div><p class="note">Frete pela tabela do Mercado Livre abaixo, conforme peso cobrado e faixa de preço.</p>`;}
+    if(k.tipo==='ml'){body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_ads">ADS %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div></div><p class="note">Comissão definida pela tarifa da categoria (abaixo). Frete pela tabela do Mercado Livre, conforme peso cobrado e faixa de preço.</p>`;}
     else{const fx=cfg.faixas||[];
       body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_ads">ADS %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div>
       <div class="field"><label class="label" for="p_${k.id}_ff">Frete pago pelo vendedor (R$)</label><input class="n" id="p_${k.id}_ff" inputmode="decimal" value="${n2(+cfg.freteFixo||0)}" data-cp="${k.id}.freteFixo" data-tipo="rs"></div></div>
@@ -312,6 +336,13 @@ function viewParametros(c){
       <div><button onclick="addFaixa('${k.id}')">+ Faixa de preço</button></div>
       <p class="note">Confirme os valores no painel do vendedor. As regras deste canal mudam com frequência.</p>`;}
     return `<section class="panel card"><div class="card-head"><h2>${esc(k.nome)}</h2><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="at_${k.id}" data-ativo="${k.id}" ${cfg.ativo?'checked':''}> Ativo</label></div>${body}</section>`;};
+  const tgs=c.tarifasML||[];const usos=id=>S.produtos.filter(p=>grupoML(c,p)?.id===id).length;
+  const tarifasT=`<section class="panel card"><div><h2>Tarifas Mercado Livre por categoria</h2><p class="note">Cada categoria de produto tem sua comissão. Altere aqui e todos os produtos da tarifa se atualizam. O produto escolhe a tarifa na tabela de Precificação ou no cadastro.</p></div>
+    <div class="scroll"><table class="ov-table"><thead><tr><th>Nome da tarifa</th><th>Premium %</th><th>Clássico %</th><th class="r">Produtos</th><th></th></tr></thead><tbody>
+    ${tgs.map((g,i)=>{const u=usos(g.id);return `<tr><td><input id="tg_${i}_nome" value="${esc(g.nome)}" data-tg="${i}.nome" style="width:170px"></td><td>${inPct(`tg_${i}_premium`,g.premium,`data-tg="${i}.premium"`)}</td><td>${inPct(`tg_${i}_classico`,g.classico,`data-tg="${i}.classico"`)}</td>
+      <td class="r num">${u}</td><td>${tgs.length>1&&!u?`<button class="link" onclick="remTarifa(${i})">remover</button>`:(tgs.length>1?'<span class="note">em uso</span>':'')}</td></tr>`;}).join('')}</tbody></table></div>
+    <div><button onclick="addTarifa()">+ Nova tarifa</button></div>
+    <p class="note">A primeira tarifa da lista é a padrão para produtos novos.</p></section>`;
   const freteT=fr?`<section class="panel card"><div class="card-head"><div><h2>Tabela de frete Mercado Livre</h2><p class="note">Vale para todos os clientes. Referência: ${esc(fr.atualizado||'')}. Edite um valor e saia do campo para salvar.</p></div>
       <div class="field"><label class="label" for="frAtual">Referência</label><input id="frAtual" value="${esc(fr.atualizado||'')}" style="width:110px"></div></div>
     <div class="scroll"><table class="frete"><thead><tr><th>Peso</th>${fr.faixasPreco.map(f=>`<th class="r">${esc(f.nome)}</th>`).join('')}</tr></thead><tbody>
@@ -323,8 +354,8 @@ function viewParametros(c){
     <div class="field"><label class="label" for="pc_imp">Impostos %</label>${inPct('pc_imp',c.imposto,'data-cn="imposto"')}</div>
     <div class="field"><label class="label" for="pc_desp">Assessoria / operação %</label>${inPct('pc_desp',c.despesas,'data-cn="despesas"')}</div>
     <div class="field"><label class="label" for="pc_marg">Margem padrão %</label>${inPct('pc_marg',c.margem,'data-cn="margem"')}</div></div>
-    <p class="note">Taxas diferentes para um produto específico (ex.: ADS de afiliados 12%) são definidas no cadastro do produto.</p></section>
-  <div class="cards">${CANAIS.map(canalCard).join('')}</div>${freteT}
+    <p class="note">ADS diferente para um produto (ex.: afiliados 12%) é definido no cadastro do produto.</p></section>
+  <div class="cards">${CANAIS.map(canalCard).join('')}</div>${tarifasT}${freteT}
   <section class="panel card"><h2>Excluir cliente</h2><p class="note">Remove o cliente e todos os produtos dele. Não dá para desfazer.</p>
     <div id="delCli">${S.pendente==='delCli'?`<div class="sim"><span>Excluir “${esc(c.nome)}” e ${S.produtos.length} produtos?</span><button class="danger" onclick="excluirCliente()">Sim, excluir</button><button onclick="S.pendente=null;render()">Cancelar</button></div>`:`<button class="danger" onclick="S.pendente='delCli';render()">Excluir cliente</button>`}</div></section>`;
 }
@@ -338,7 +369,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;const c=cli();if(!c)return;
-  if(t.id==='cliSel'){S.cid=t.value;try{localStorage.setItem('prec_cli',S.cid)}catch{};S.sel=null;S.sim='';assinarProdutos();render();return;}
+  if(t.id==='cliSel'){S.cid=t.value;try{localStorage.setItem('prec_cli',S.cid)}catch{};S.sel=null;S.sim='';S.marcados.clear();assinarProdutos();render();return;}
   if(t.dataset.pcmv||t.dataset.ppa){
     const [pid,canal]=(t.dataset.pcmv||t.dataset.ppa).split('|');const p=S.produtos.find(x=>x.id===pid);if(!p)return;
     const txt=t.value.trim();const v=parseN(txt);
@@ -347,6 +378,14 @@ document.addEventListener('change',e=>{
     if(t.dataset.pcmv){const nv=txt?v:0;if(nv===+p.cmv)return;p.cmv=nv;patch={cmv:nv};}
     else{const nv=txt&&v>0?v:null;if(nv===(p.precoAtual?.[canal]??null))return;p.precoAtual={...(p.precoAtual||{}),[canal]:nv};patch={precoAtual:{[canal]:nv}};}
     render();const path=`clientes/${S.cid}/produtos/${pid}`;gravar(path,()=>S.db.doc(path).update(patch));return;}
+  if(t.dataset.ck){t.checked?S.marcados.add(t.dataset.ck):S.marcados.delete(t.dataset.ck);render();return;}
+  if(t.id==='ckAll'){const l=filtrados();if(t.checked)l.forEach(p=>S.marcados.add(p.id));else l.forEach(p=>S.marcados.delete(p.id));render();return;}
+  if(t.dataset.ptg){const p=S.produtos.find(x=>x.id===t.dataset.ptg);if(!p)return;p.tarifaML=t.value;render();const path=`clientes/${S.cid}/produtos/${p.id}`;gravar(path,()=>S.db.doc(path).update({tarifaML:t.value}));return;}
+  if(t.id==='bulkTg'){if(!t.value)return;const ids=[...S.marcados];ids.forEach(id=>{const p=S.produtos.find(x=>x.id===id);if(p)p.tarifaML=t.value;const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).update({tarifaML:t.value}));});
+    toast(`Tarifa alterada em ${ids.length} produto${ids.length>1?'s':''}.`);render();return;}
+  if(t.dataset.tg){const [i,f]=t.dataset.tg.split('.');const tgs=structuredClone(c.tarifasML||[]);
+    if(f==='nome'){if(!t.value.trim()){render();return;}tgs[+i].nome=t.value.trim();}else{const v=parseN(t.value);if(!isFinite(v)){toast('Valor inválido.');render();return;}tgs[+i][f]=v/100;}
+    upCliente({tarifasML:tgs});return;}
   if(t.dataset.ativo){upCliente({canais:{[t.dataset.ativo]:{ativo:t.checked}}});return;}
   if(t.dataset.cn){const k=t.dataset.cn;if(k==='nome'){if(t.value.trim())upCliente({nome:t.value.trim()});return;}
     const v=parseN(t.value);if(isFinite(v))upCliente({[k]:v/100});else{toast('Valor inválido.');render();}return;}
@@ -359,10 +398,30 @@ document.addEventListener('change',e=>{
     S.frete=fr;render();gravar('config/freteML',()=>S.db.doc('config/freteML').set(fr));}
 });
 document.addEventListener('click',e=>{
-  const tr=e.target.closest('tr[data-id]');if(tr&&!e.target.closest('button,input')){S.sel=S.sel===tr.dataset.id?null:tr.dataset.id;S.sim='';render();return;}
+  const tr=e.target.closest('tr[data-id]');if(tr&&!e.target.closest('button,input,select,label')){S.sel=S.sel===tr.dataset.id?null:tr.dataset.id;S.sim='';render();return;}
   const te=e.target.closest('tr[data-edit]');if(te){editarProduto(te.dataset.edit);}
 });
 function addFaixa(k){const c=cli();const fx=structuredClone(c.canais[k].faixas||[]);const last=fx[fx.length-1]||{ini:0,pct:0.1,fixo:0};fx.push({ini:(+last.ini||0)+100,pct:last.pct,fixo:last.fixo});upCliente({canais:{[k]:{faixas:fx}}});}
+function addTarifa(){const c=cli();const tgs=structuredClone(c.tarifasML||[]);const last=tgs[tgs.length-1]||{premium:0.165,classico:0.115};
+  tgs.push({id:'t'+Date.now().toString(36),nome:'Tarifa '+String.fromCharCode(65+tgs.length),premium:last.premium,classico:last.classico});upCliente({tarifasML:tgs});}
+function remTarifa(i){const c=cli();const tgs=structuredClone(c.tarifasML);tgs.splice(i,1);upCliente({tarifasML:tgs});}
+function promoLote(){const ids=[...S.marcados];const fim=new Date();fim.setDate(fim.getDate()+14);
+  const dflt=fim.toISOString().slice(0,10);
+  modal(`<h2>Aplicar promoção ML</h2><p class="note">Vale para os ${ids.length} produtos selecionados. Informe a redução da tarifa em reais, como o Mercado Livre mostra. Deixe em branco o tipo de anúncio que não entra na promoção.</p>
+  <div class="form-grid"><div class="field"><label class="label" for="plPre">Redução Premium (R$)</label><input id="plPre" class="num" inputmode="decimal" placeholder="ex.: 5,68"></div>
+  <div class="field"><label class="label" for="plCla">Redução Clássico (R$)</label><input id="plCla" class="num" inputmode="decimal" placeholder="ex.: 3,20"></div>
+  <div class="field"><label class="label" for="plAte">Válida até</label><input id="plAte" type="date" value="${dflt}"></div></div>
+  <p class="note">No dia seguinte à data final, o sistema volta sozinho para a tarifa normal.</p>
+  <div class="sim"><button class="primary" id="plOk">Aplicar</button><button onclick="fecharModal()">Cancelar</button></div>`);
+  $('#plOk').onclick=()=>{const pre=parseN($('#plPre').value),cla=parseN($('#plCla').value),ate=$('#plAte').value;
+    if(!ate){toast('Informe a data final da promoção.');return;}if(!(pre>0)&&!(cla>0)){toast('Informe a redução de ao menos um tipo de anúncio.');return;}
+    const patch={promoML:{}};if(pre>0)patch.promoML.ml_premium={reducao:pre,ate};if(cla>0)patch.promoML.ml_classico={reducao:cla,ate};
+    ids.forEach(id=>{const p=S.produtos.find(x=>x.id===id);if(p)p.promoML={...(p.promoML||{}),...structuredClone(patch.promoML)};const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).update(patch));});
+    fecharModal();toast(`Promoção aplicada em ${ids.length} produto${ids.length>1?'s':''}.`);render();};}
+function removerPromoLote(){const ids=[...S.marcados];let n=0;
+  ids.forEach(id=>{const p=S.produtos.find(x=>x.id===id);if(!p||!p.promoML)return;n++;const doc=structuredClone(p);delete doc.id;delete doc.promoML;delete p.promoML;
+    const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).set(doc));});
+  toast(n?`Promoção removida de ${n} produto${n>1?'s':''}.`:'Nenhum dos selecionados tinha promoção.');render();}
 function remFaixa(k,i){const c=cli();const fx=structuredClone(c.canais[k].faixas);fx.splice(i,1);upCliente({canais:{[k]:{faixas:fx}}});}
 
 /* ---------- Clientes ---------- */
@@ -394,13 +453,18 @@ function editarProduto(id){
   <div class="form-grid">${f('sku','SKU',p.sku,false)}${f('nome','Nome',p.nome,false,'wide')}
   ${f('anuncioPremium','Anúncio Premium',p.anuncioPremium,false)}${f('anuncioClassico','Anúncio Clássico',p.anuncioClassico,false)}
   ${f('L','Largura (cm)',p.L)}${f('C','Comprimento (cm)',p.C)}${f('P','Altura (cm)',p.P)}${f('peso','Peso real (kg)',p.peso)}
-  ${f('cmv','CMV (R$)',p.cmv)}${f('embalagem','Embalagem (R$)',p.embalagem)}</div>
-  <div><div class="label" style="margin-bottom:6px">Por canal</div><div class="scroll"><table class="ov-table"><thead><tr><th>Canal</th><th>Preço atual (R$)</th><th>Comissão % <span class="muted">(vazio = padrão)</span></th><th>ADS %</th><th>Desconto tarifa (R$)</th></tr></thead><tbody>
+  ${f('cmv','CMV (R$)',p.cmv)}${f('embalagem','Embalagem (R$)',p.embalagem)}
+  <div class="field"><label class="label" for="ep_tarifa">Tarifa ML</label>${selTarifa(c,p,'id="ep_tarifa"')}</div></div>
+  <div><div class="label" style="margin-bottom:6px">Promoção Mercado Livre</div><div class="scroll"><table class="ov-table"><thead><tr><th>Anúncio</th><th>Redução da tarifa (R$)</th><th>Válida até</th><th></th></tr></thead><tbody>
+  ${['ml_premium','ml_classico'].map(k=>{const pr=(p.promoML||{})[k]||{};const exp=pr.ate&&pr.ate<hojeISO();return `<tr><td>${k==='ml_premium'?'Premium':'Clássico'}</td>
+    <td><input class="n" id="ep_pr_${k}" inputmode="decimal" value="${pr.reducao?n2(pr.reducao):''}" placeholder="0,00"></td><td><input type="date" id="ep_pa2_${k}" value="${esc(pr.ate||'')}"></td><td>${exp?'<span class="chip warn">expirada</span>':''}</td></tr>`;}).join('')}</tbody></table></div>
+  <p class="note">Deixe a redução em branco para não ter promoção. Depois da data final, o cálculo volta para a tarifa normal.</p></div>
+  <div><div class="label" style="margin-bottom:6px">Por canal</div><div class="scroll"><table class="ov-table"><thead><tr><th>Canal</th><th>Preço atual (R$)</th><th>Comissão % <span class="muted">(só exceção)</span></th><th>ADS %</th><th>Desconto tarifa (R$)</th></tr></thead><tbody>
   ${CANAIS.map(k=>{const o=ov[k.id]||{};return `<tr><td>${esc(k.nome)}</td><td><input class="n" id="ep_pa_${k.id}" inputmode="decimal" value="${n2(p.precoAtual?.[k.id])}"></td>
-    <td><input class="n" id="ep_co_${k.id}" inputmode="decimal" value="${o.comissao!=null?pctIn(o.comissao):''}" placeholder="${k.tipo==='ml'?pctIn(c.canais[k.id]?.comissao):'faixas'}"></td>
+    <td><input class="n" id="ep_co_${k.id}" inputmode="decimal" value="${o.comissao!=null?pctIn(o.comissao):''}" placeholder="${k.tipo==='ml'?'tarifa':'faixas'}"></td>
     <td><input class="n" id="ep_ad_${k.id}" inputmode="decimal" value="${o.ads!=null?pctIn(o.ads):''}" placeholder="${pctIn(c.canais[k.id]?.ads)}"></td>
     <td><input class="n" id="ep_de_${k.id}" inputmode="decimal" value="${o.desconto?n2(o.desconto):''}" placeholder="0,00"></td></tr>`;}).join('')}</tbody></table></div>
-  <p class="note">Use ADS 12% para anúncios de afiliados. Desconto de tarifa é um valor em R$ abatido da comissão.</p></div>
+  <p class="note">Use ADS 12% para anúncios de afiliados. Comissão aqui só se este produto fugir da tarifa da categoria. Desconto de tarifa é um abatimento permanente em R$.</p></div>
   <div class="toolbar"><div class="grp"><button class="primary" id="epOk">Salvar</button><button onclick="fecharModal()">Cancelar</button></div>
   ${id?`<div id="epDel" class="sim"><button class="danger" id="epDelBtn">Excluir</button></div>`:''}</div>`);
   if(id)$('#epDelBtn').onclick=()=>{$('#epDel').innerHTML='<span>Excluir este produto?</span> <button class="danger" id="epDelSim">Sim, excluir</button>';$('#epDelSim').onclick=()=>excluirProduto(id);};
@@ -412,9 +476,13 @@ function salvarProduto(id,orig){
   const doc={...structuredClone(orig),sku,nome:g('nome').trim(),anuncioPremium:g('anuncioPremium').trim()||null,anuncioClassico:g('anuncioClassico').trim()||null,
     L:num('L'),C:num('C'),P:num('P'),peso:num('peso'),cmv:num('cmv'),embalagem:num('embalagem'),overrides:{},precoAtual:{}};
   delete doc.id;
+  const ckP=['ml_premium','ml_classico'].some(k=>parseN(g('pr_'+k))>0&&!g('pa2_'+k));if(ckP){toast('Informe a data final da promoção.');return;}
   CANAIS.forEach(k=>{const pa=parseN(g('pa_'+k.id));doc.precoAtual[k.id]=isFinite(pa)&&pa>0?pa:null;
     const o={};const co=parseN(g('co_'+k.id)),ad=parseN(g('ad_'+k.id)),de=parseN(g('de_'+k.id));
     if(isFinite(co))o.comissao=co/100;if(isFinite(ad))o.ads=ad/100;if(isFinite(de)&&de)o.desconto=de;if(Object.keys(o).length)doc.overrides[k.id]=o;});
+  doc.tarifaML=$('#ep_tarifa')?.value||cli().tarifasML?.[0]?.id||null;doc.promoML={};
+  for(const k of ['ml_premium','ml_classico']){const r=parseN(g('pr_'+k)),ate=g('pa2_'+k);if(r>0){if(!ate){toast('Informe a data final da promoção.');return;}doc.promoML[k]={reducao:r,ate};}}
+  if(!Object.keys(doc.promoML).length)delete doc.promoML;
   if(!id)doc.ordem=(Math.max(0,...S.produtos.map(p=>+p.ordem||0)))+1;
   const ref=id?S.db.doc(`clientes/${S.cid}/produtos/${id}`):S.db.collection(`clientes/${S.cid}/produtos`).doc();
   fecharModal();gravar(ref.path,()=>ref.set(doc).then(()=>toast('Produto salvo.')));
@@ -447,7 +515,7 @@ function importar(){
 /* ---------- Exportar ---------- */
 async function exportar(){
   const c=cli();const ativos=canaisAtivos(c);const m=+c.margem||0;
-  const linhas=filtrados().map(p=>{const r={SKU:p.sku,Produto:p.nome,'Anúncio Premium':p.anuncioPremium||'','Anúncio Clássico':p.anuncioClassico||'','Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),CMV:+p.cmv,Embalagem:+p.embalagem};
+  const linhas=filtrados().map(p=>{const r={SKU:p.sku,Produto:p.nome,'Anúncio Premium':p.anuncioPremium||'','Anúncio Clássico':p.anuncioClassico||'','Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),CMV:+p.cmv,Embalagem:+p.embalagem,'Tarifa ML':grupoML(c,p)?.nome||'','Promoção ML':['ml_premium','ml_classico'].map(k=>{const pr=promoAtiva(p,k,hojeISO());return pr?`${k==='ml_premium'?'Premium':'Clássico'} −${n2(pr.reducao)} até ${dataBRc(pr.ate)}`:'';}).filter(Boolean).join(' · ')};
     ativos.forEach(k=>{const s=precoSugerido(c,k.id,p,S.frete,m);const at=p.precoAtual?.[k.id];const d=at?dre(c,k.id,p,S.frete,at):null;
       r[`${k.nome} · sugerido`]=s==null?'':+s.toFixed(2);r[`${k.nome} · atual`]=at||'';r[`${k.nome} · margem atual`]=d?+d.margem.toFixed(4):'';});return r;});
   const nome=`Precificação ${c.nome} - margem ${pctIn(m)}%`;
