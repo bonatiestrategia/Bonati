@@ -72,6 +72,9 @@ tbody tr.sel td{background:var(--accent-soft)}
 td.nome{max-width:280px;overflow:hidden;text-overflow:ellipsis}
 .sku{font-family:var(--f-num);font-weight:500}
 .sug{font-weight:600;color:var(--wine)}
+input.cell{width:96px;padding:3px 6px;font-size:13px;border:1px dashed var(--line);background:transparent}
+input.cell:hover{border-color:var(--gold)}
+input.cell:focus{border:1px solid var(--wine);background:var(--surface)}
 .chip{display:inline-block;padding:1px 7px;border-radius:999px;font-family:var(--f-num);font-size:12px;font-weight:500}
 .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.bad{background:var(--bad-soft);color:var(--bad)}
 .muted{color:var(--muted)}
@@ -242,12 +245,12 @@ function viewPrecos(c){
       if(d&&d.margem<m-0.0005)abaixo++;
       const ov=(p.overrides||{})[k.id];
       return `<td class="r bl num sug">${sug==null?'<span class="chip bad">inviável</span>':brl(sug)}${ov&&Object.keys(ov).length?'<span class="tag" title="Taxa específica deste produto">*</span>':''}</td>
-        <td class="r num muted">${at?brl(at):'—'}</td><td class="r">${d?chipMargem(d.margem,m):'<span class="muted">—</span>'}</td>`;}).join('');
+        <td class="r"><input class="n cell" id="pa_${esc(p.id)}_${k.id}" data-ppa="${esc(p.id)}|${k.id}" inputmode="decimal" value="${at?n2(at):''}" placeholder="—" aria-label="Preço de venda ${esc(k.nome)} de ${esc(p.sku)}"></td><td class="r">${d?chipMargem(d.margem,m):'<span class="muted">—</span>'}</td>`;}).join('');
     return `<tr data-id="${esc(p.id)}" class="${S.sel===p.id?'sel':''}"><td class="sku">${esc(p.sku)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
-      <td class="r num">${n2(pesoCobrado(p))} kg</td><td class="r num">${brl(+p.cmv)}</td>${cells}</tr>`;}).join('');
-  const sum=`<div class="summary"><span><b>${lista.length}</b> de ${S.produtos.length} anúncios</span><span><b>${abaixo}</b> preços atuais abaixo da meta</span>${inv?`<span><b>${inv}</b> sem preço possível (margem alta demais)</span>`:''}<span>* taxa específica do produto</span></div>`;
+      <td class="r num">${n2(pesoCobrado(p))} kg</td><td class="r"><input class="n cell" id="cmv_${esc(p.id)}" data-pcmv="${esc(p.id)}" inputmode="decimal" value="${n2(+p.cmv)}" aria-label="CMV de ${esc(p.sku)}"></td>${cells}</tr>`;}).join('');
+  const sum=`<div class="summary"><span><b>${lista.length}</b> de ${S.produtos.length} anúncios</span><span><b>${abaixo}</b> preços atuais abaixo da meta</span>${inv?`<span><b>${inv}</b> sem preço possível (margem alta demais)</span>`:''}<span>* taxa específica do produto</span><span>✎ CMV e preço de venda são editáveis direto na tabela</span></div>`;
   const table=`<div class="panel scroll"><table><thead><tr><th colspan="4"></th>${ativos.map(k=>`<th class="grp" colspan="3">${esc(k.nome)}</th>`).join('')}</tr>
-    <tr><th>SKU</th><th>Produto</th><th class="r">Peso cobrado</th><th class="r">CMV</th>${ativos.map(()=>`<th class="r bl">Sugerido</th><th class="r">Atual</th><th class="r">Margem atual</th>`).join('')}</tr></thead>
+    <tr><th>SKU</th><th>Produto</th><th class="r">Peso cobrado</th><th class="r">CMV (R$) ✎</th>${ativos.map(()=>`<th class="r bl">Sugerido</th><th class="r">Preço de venda ✎</th><th class="r">Margem atual</th>`).join('')}</tr></thead>
     <tbody>${rows||`<tr><td colspan="${4+ativos.length*3}" class="muted">Nenhum produto encontrado para “${esc(S.busca)}”.</td></tr>`}</tbody></table></div>`;
   const tools=`<div class="toolbar"><div class="grp"><input id="inBusca" type="search" placeholder="Buscar SKU, nome ou anúncio" value="${esc(S.busca)}" style="width:260px"></div>
     <div class="grp"><button type="button" onclick="exportar()">Exportar Excel</button></div></div>`;
@@ -336,6 +339,14 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   const t=e.target;const c=cli();if(!c)return;
   if(t.id==='cliSel'){S.cid=t.value;try{localStorage.setItem('prec_cli',S.cid)}catch{};S.sel=null;S.sim='';assinarProdutos();render();return;}
+  if(t.dataset.pcmv||t.dataset.ppa){
+    const [pid,canal]=(t.dataset.pcmv||t.dataset.ppa).split('|');const p=S.produtos.find(x=>x.id===pid);if(!p)return;
+    const txt=t.value.trim();const v=parseN(txt);
+    if(txt&&!(isFinite(v)&&v>=0)){toast('Valor inválido. Use números, ex.: 51,52');t.value=t.dataset.pcmv?n2(+p.cmv):n2(p.precoAtual?.[canal]);return;}
+    let patch;
+    if(t.dataset.pcmv){const nv=txt?v:0;if(nv===+p.cmv)return;p.cmv=nv;patch={cmv:nv};}
+    else{const nv=txt&&v>0?v:null;if(nv===(p.precoAtual?.[canal]??null))return;p.precoAtual={...(p.precoAtual||{}),[canal]:nv};patch={precoAtual:{[canal]:nv}};}
+    render();const path=`clientes/${S.cid}/produtos/${pid}`;gravar(path,()=>S.db.doc(path).update(patch));return;}
   if(t.dataset.ativo){upCliente({canais:{[t.dataset.ativo]:{ativo:t.checked}}});return;}
   if(t.dataset.cn){const k=t.dataset.cn;if(k==='nome'){if(t.value.trim())upCliente({nome:t.value.trim()});return;}
     const v=parseN(t.value);if(isFinite(v))upCliente({[k]:v/100});else{toast('Valor inválido.');render();}return;}
@@ -348,7 +359,7 @@ document.addEventListener('change',e=>{
     S.frete=fr;render();gravar('config/freteML',()=>S.db.doc('config/freteML').set(fr));}
 });
 document.addEventListener('click',e=>{
-  const tr=e.target.closest('tr[data-id]');if(tr&&!e.target.closest('button')){S.sel=S.sel===tr.dataset.id?null:tr.dataset.id;S.sim='';render();return;}
+  const tr=e.target.closest('tr[data-id]');if(tr&&!e.target.closest('button,input')){S.sel=S.sel===tr.dataset.id?null:tr.dataset.id;S.sim='';render();return;}
   const te=e.target.closest('tr[data-edit]');if(te){editarProduto(te.dataset.edit);}
 });
 function addFaixa(k){const c=cli();const fx=structuredClone(c.canais[k].faixas||[]);const last=fx[fx.length-1]||{ini:0,pct:0.1,fixo:0};fx.push({ini:(+last.ini||0)+100,pct:last.pct,fixo:last.fixo});upCliente({canais:{[k]:{faixas:fx}}});}
