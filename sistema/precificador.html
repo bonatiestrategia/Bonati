@@ -79,6 +79,21 @@ select.cell-sel:hover{border-color:var(--gold)}
 .bulk{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 14px;border:1px solid var(--gold);background:#FBF1DC;border-radius:10px}
 .promo-cmp{display:grid;gap:4px;padding:8px 10px;border-radius:8px;background:var(--sunk);font-size:13px}
 .promo-cmp span{display:flex;justify-content:space-between;gap:8px}
+tr.grp-row td{background:var(--sunk);border-top:2px solid var(--line);padding:7px 10px;cursor:default}
+.grp-in{position:sticky;left:10px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:max-content;max-width:min(1100px,calc(100vw - 72px))}
+.grp-in .sku{font-size:14.5px;color:var(--wine)}
+.gnome{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.gf{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap}
+button.tog{border:0;background:none;padding:0 4px;font-size:15px;color:var(--wine);line-height:1}
+td.mlbc,th.mlbc{position:sticky;left:30px;z-index:1;background:var(--surface);box-shadow:1px 0 0 var(--line)}
+thead th.mlbc{background:var(--sunk);z-index:2}
+tbody tr:hover td.mlbc{background:var(--sunk)}tbody tr.sel td.mlbc{background:var(--accent-soft)}
+input.cell.txt{width:140px;text-align:left;font-family:var(--f-num)}
+input.cell.fam{width:140px}
+.sub{font-size:10.5px;color:var(--muted);font-family:var(--f-num);padding:1px 0 0 7px}
+button.muted-btn{color:var(--muted)}button.danger-t{color:var(--bad)}
+td.fams{max-width:260px;overflow:hidden;text-overflow:ellipsis}
+tr.anu-vazio td{padding:10px}
 input.cell.date{width:128px;font-family:var(--f-num);font-size:12px}
 input.cell.exp{text-decoration:line-through;color:var(--muted)}
 td.ck,th.ck{position:sticky;left:0;z-index:1;background:var(--surface)}
@@ -207,137 +222,171 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const brl=v=>v==null||!isFinite(v)?'—':v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const n2=v=>v==null||!isFinite(v)?'':(+v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct=(v,d=1)=>v==null||!isFinite(v)?'—':(v*100).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d})+'%';
-const pctIn=v=>v==null?'':(+(v*100).toFixed(4)).toLocaleString('pt-BR',{maximumFractionDigits:4});
+const pctIn=v=>v==null||!isFinite(v)?'':(+(v*100).toFixed(4)).toLocaleString('pt-BR',{maximumFractionDigits:4});
 const parseN=s=>{if(s==null)return NaN;s=String(s).trim().replace(/R\$|\s|%/g,'');if(!s)return NaN;if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');return parseFloat(s);};
+const dataBR=iso=>iso?iso.split('-').reverse().slice(0,2).join('/'):'';
+const dataBRc=iso=>iso?iso.split('-').reverse().join('/'):'';
 const PADRAO={imposto:0.10,despesas:0.057,margem:0.15,canais:{
   ml_premium:{ativo:true,comissao:0.165,ads:0.04},
   ml_classico:{ativo:true,comissao:0.115,ads:0.04},
   shopee:{ativo:false,ads:0.04,freteFixo:0,faixas:[{ini:0,pct:0.20,fixo:4.5},{ini:80,pct:0.14,fixo:16},{ini:100,pct:0.14,fixo:20},{ini:200,pct:0.14,fixo:26}]},
   tiktok:{ativo:false,ads:0,freteFixo:0,faixas:[{ini:0,pct:0.10,fixo:4}]}}};
 
-const S={db:null,clientes:[],cid:null,produtos:[],frete:null,busca:'',sel:null,canalDet:'ml_premium',sim:'',view:'precos',
-  loaded:{cli:false,prod:false,frete:false},erro:null,unsubProd:null,pendente:null,editavel:true,marcados:new Set()};
-const dataBR=iso=>iso?iso.split('-').reverse().slice(0,2).join('/'):'';
-const dataBRc=iso=>iso?iso.split('-').reverse().join('/'):'';
-function temML(c){return canaisAtivos(c).some(k=>k.tipo==='ml');}
-function chipPromo(p){const hoje=hojeISO();const at=['ml_premium','ml_classico'].map(k=>promoAtiva(p,k,hoje)).filter(Boolean);if(!at.length)return '';const ate=at.map(x=>x.ate).sort()[0];return `<span class="chip promo" title="Promoção ML com redução de tarifa">promo até ${dataBR(ate)}</span>`;}
-function selTarifa(c,p,attrs){return `<select ${attrs}>${(c.tarifasML||[]).map(g=>`<option value="${esc(g.id)}"${grupoML(c,p)?.id===g.id?' selected':''}>${esc(g.nome)}</option>`).join('')}</select>`;}
+const S={db:null,clientes:[],cid:null,produtos:[],frete:null,busca:'',sel:null,sim:'',view:'precos',
+  loaded:{cli:false,prod:false,frete:false},erro:null,unsubProd:null,pendente:null,marcados:new Set(),fechados:new Set()};
 function cli(){return S.clientes.find(c=>c.id===S.cid)||null;}
 function canaisAtivos(c){return CANAIS.filter(k=>c.canais?.[k.id]?.ativo);}
-
-function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;$('#toastRoot').replaceChildren(t);setTimeout(()=>t.remove(),2600);}
+function nomeCanal(id){return CANAIS.find(k=>k.id===id)?.nome||id||'';}
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;$('#toastRoot').replaceChildren(t);setTimeout(()=>t.remove(),2800);}
 const filas={};
 function gravar(path,fn){const p=(filas[path]||Promise.resolve()).then(fn).catch(e=>{console.error(e);
-  if(e?.code==='invalid_argument'){S.editavel=false;toast('Você não tem permissão para alterar estes dados.');}
+  if(e?.code==='invalid_argument')toast('Você não tem permissão para alterar estes dados.');
   else if(e?.code==='quota_exceeded')toast('Limite de armazenamento atingido. Exclua produtos antigos.');
   else toast('Não foi possível salvar. Tente de novo.');});filas[path]=p;return p;}
 function upCliente(patch){const c=cli();if(!c||!S.db)return;Object.assign(c,structuredClone(patch));render();
   return gravar('clientes/'+c.id,()=>S.db.doc('clientes/'+c.id).update(patch));}
 const deb={};function debounce(k,ms,fn){clearTimeout(deb[k]);deb[k]=setTimeout(fn,ms);}
+const pPath=pid=>`clientes/${S.cid}/produtos/${pid}`;
+const novoId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
-/* ---------- Views ---------- */
+/* ---------- Anúncios: cada SKU tem um conjunto de anúncios (MLB, Shopee, TikTok) ---------- */
+function anuncios(p){return Object.entries(p.anuncios||{}).filter(([,a])=>a).map(([id,a])=>({id,...a})).sort((x,y)=>(+x.ordem||0)-(+y.ordem||0));}
+function vprod(p,a){const ov={};if(a.taxa!=null)ov.comissao=+a.taxa;if(a.ads!=null)ov.ads=+a.ads;if(+a.desc)ov.desconto=+a.desc;
+  return {...p,overrides:{[a.canal]:ov},promoML:a.promo&&+a.promo.reducao>0?{[a.canal]:a.promo}:{}};}
+function calc(c,p,a,m,opt){const vp=vprod(p,a);return {vp,sug:precoSugerido(c,a.canal,vp,S.frete,m,opt),d:+a.preco>0?dre(c,a.canal,vp,S.frete,+a.preco):null,e:cfgEfetiva(c,a.canal,vp)};}
+function salvarAnuncio(pid,aid,patch){gravar(pPath(pid),()=>S.db.doc(pPath(pid)).update({anuncios:{[aid]:patch}}));}
+function filtro(){const q=S.busca.trim().toLowerCase();
+  return S.produtos.map(p=>{const as=anuncios(p);if(!q)return {p,as};
+    if([p.sku,p.nome].some(x=>String(x||'').toLowerCase().includes(q)))return {p,as};
+    const am=as.filter(a=>[a.mlb,a.familia,a.upid,nomeCanal(a.canal)].some(x=>String(x||'').toLowerCase().includes(q)));
+    return am.length?{p,as:am,total:as.length}:null;}).filter(Boolean);}
+function chipMargem(m,meta){if(m==null||!isFinite(m))return '<span class="muted">—</span>';const cls=m<0?'bad':m<meta-0.0005?'warn':'ok';return `<span class="chip ${cls}">${pct(m)}</span>`;}
+
+/* ---------- Render ---------- */
 function render(){
   document.querySelectorAll('nav.tabs a').forEach(a=>{if(a.dataset.v===S.view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-  const sel=$('#cliSel');
-  sel.innerHTML=S.clientes.map(c=>`<option value="${esc(c.id)}"${c.id===S.cid?' selected':''}>${esc(c.nome)}</option>`).join('')||'<option>—</option>';
+  $('#cliSel').innerHTML=S.clientes.map(c=>`<option value="${esc(c.id)}"${c.id===S.cid?' selected':''}>${esc(c.nome)}</option>`).join('')||'<option>—</option>';
   const app=$('#app');
   if(S.erro){app.innerHTML=`<div class="state">${esc(S.erro)}</div>`;return;}
   if(!S.loaded.cli){app.innerHTML=`<div class="state">Carregando clientes…</div>`;return;}
   if(!S.clientes.length){app.innerHTML=`<div class="panel empty"><h2>Nenhum cliente cadastrado</h2><p>Crie o primeiro cliente para cadastrar produtos e taxas.</p><button class="primary" onclick="novoCliente()">Criar cliente</button></div>`;return;}
   const c=cli();if(!c){S.cid=S.clientes[0].id;return render();}
-  const ae=document.activeElement;const keep=ae?.tagName==='INPUT'?ae.id:null;const pos=ae?.selectionStart;const raw=ae?.value;
+  const ae=document.activeElement;const keep=(ae?.tagName==='INPUT'||ae?.tagName==='SELECT')?ae.id:null;const pos=ae?.selectionStart;const raw=ae?.value;
+  const sx=$('#tblScroll')?.scrollLeft;
   if(S.view==='precos')app.innerHTML=viewPrecos(c);
   else if(S.view==='produtos')app.innerHTML=viewProdutos(c);
   else app.innerHTML=viewParametros(c);
-  if(keep){const el=document.getElementById(keep);if(el&&el.tagName==='INPUT'){if(el.type!=='checkbox')el.value=raw;el.focus();try{if(pos!=null)el.setSelectionRange(pos,pos);}catch{}}}
+  if(sx&&$('#tblScroll'))$('#tblScroll').scrollLeft=sx;
+  if(keep){const el=document.getElementById(keep);if(el){if(el.tagName==='INPUT'&&el.type!=='checkbox')el.value=raw;el.focus();try{if(pos!=null)el.setSelectionRange(pos,pos);}catch{}}}
 }
-function filtrados(){const q=S.busca.trim().toLowerCase();return S.produtos.filter(p=>!q||(p.sku||'').toLowerCase().includes(q)||(p.nome||'').toLowerCase().includes(q)||(p.anuncioPremium||'').toLowerCase().includes(q)||(p.anuncioClassico||'').toLowerCase().includes(q));}
-function chipMargem(m,meta){if(m==null||!isFinite(m))return '<span class="muted">—</span>';const cls=m<0?'bad':m<meta-0.0005?'warn':'ok';return `<span class="chip ${cls}">${pct(m)}</span>`;}
 
 function viewPrecos(c){
-  const ativos=canaisAtivos(c);const m=+c.margem||0;
-  if(!S.loaded.prod)return `<div class="state">Carregando produtos…</div>`;
-  const head=`<div class="toolbar"><div><h1>Precificação · ${esc(c.nome)}</h1><p class="sub">Preço de venda calculado para atingir a margem líquida desejada em cada canal.</p></div>
-    <div class="grp"><div class="margem-box"><label class="label" for="inMargem">Margem líquida<br>desejada</label><input id="inMargem" inputmode="decimal" value="${pctIn(m)}" aria-describedby="hm"><span class="num" id="hm">%</span></div></div></div>`;
+  const m=+c.margem||0;
+  const head=`<div class="toolbar"><div><h1>Precificação · ${esc(c.nome)}</h1><p class="sub">Cada SKU com seus anúncios. Preço sugerido para atingir a margem líquida desejada.</p></div>
+    <div class="grp"><div class="margem-box"><label class="label" for="inMargem">Margem líquida<br>desejada</label><input id="inMargem" inputmode="decimal" value="${pctIn(m)}"><span class="num">%</span></div></div></div>`;
+  if(!S.loaded.prod)return head+`<div class="state">Carregando produtos…</div>`;
   if(!S.produtos.length)return head+`<div class="panel empty"><h2>Nenhum produto ainda</h2><p>Cadastre produtos ou importe da sua planilha na aba Produtos.</p><a class="btn" href="#produtos">Ir para Produtos</a></div>`;
-  if(!S.frete&&ativos.some(a=>a.id.startsWith('ml')))return head+`<div class="state">Carregando tabela de frete do Mercado Livre…</div>`;
-  const lista=filtrados();const ml=temML(c);const nFix=5;const hoje=hojeISO();
-  let abaixo=0,inv=0;
-  const rows=lista.map(p=>{
-    const cells=ativos.map(k=>{
-      const sug=precoSugerido(c,k.id,p,S.frete,m);if(sug==null)inv++;
-      const at=p.precoAtual?.[k.id];const d=at?dre(c,k.id,p,S.frete,at):null;
-      if(d&&d.margem<m-0.0005)abaixo++;
-      const ov={...((p.overrides||{})[k.id]||{})};delete ov.comissao;
-      const pid=esc(p.id);let mlc='';
-      if(k.tipo==='ml'){const e=cfgEfetiva(c,k.id,p);const pr=(p.promoML||{})[k.id]||{};const exp=pr.reducao>0&&pr.ate&&pr.ate<hoje;
-        mlc=`<td class="r bl"><input class="n cell" style="width:66px" id="tx_${pid}_${k.id}" data-ptx="${pid}|${k.id}" inputmode="decimal" value="${pctIn(e.comissao)}" aria-label="Taxa ML ${esc(k.nome)} de ${esc(p.sku)}"></td>
-        <td class="r"><input class="n cell${exp?' exp':''}" style="width:72px" id="rd_${pid}_${k.id}" data-pred="${pid}|${k.id}" inputmode="decimal" value="${pr.reducao>0?n2(pr.reducao):''}" placeholder="—" title="${exp?'Promoção expirada':''}" aria-label="Redução da taxa ${esc(k.nome)} de ${esc(p.sku)}"></td>
-        <td><input type="date" class="cell date${exp?' exp':''}" id="at_${pid}_${k.id}" data-pate="${pid}|${k.id}" value="${esc(pr.ate||'')}" aria-label="Promoção válida até, ${esc(k.nome)} de ${esc(p.sku)}"></td>`;}
-      return mlc+`<td class="r ${k.tipo==='ml'?'':'bl '}num sug">${sug==null?'<span class="chip bad">inviável</span>':brl(sug)}${Object.keys(ov).length?'<span class="tag" title="ADS ou desconto específico deste produto">*</span>':''}</td>
-        <td class="r"><input class="n cell" id="pa_${esc(p.id)}_${k.id}" data-ppa="${esc(p.id)}|${k.id}" inputmode="decimal" value="${at?n2(at):''}" placeholder="—" aria-label="Preço de venda ${esc(k.nome)} de ${esc(p.sku)}"></td><td class="r">${d?chipMargem(d.margem,m):'<span class="muted">—</span>'}</td>`;}).join('');
-    return `<tr data-id="${esc(p.id)}" class="${S.sel===p.id?'sel':''}"><td class="ck"><input type="checkbox" id="ck_${esc(p.id)}" data-ck="${esc(p.id)}" ${S.marcados.has(p.id)?'checked':''} aria-label="Selecionar ${esc(p.sku)}"></td><td class="sku">${esc(p.sku)}${chipPromo(p)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
-      <td class="r num">${n2(pesoCobrado(p))} kg</td><td class="r"><input class="n cell" id="cmv_${esc(p.id)}" data-pcmv="${esc(p.id)}" inputmode="decimal" value="${n2(+p.cmv)}" aria-label="CMV de ${esc(p.sku)}"></td>${cells}</tr>`;}).join('');
-  const sum=`<div class="summary"><span><b>${lista.length}</b> de ${S.produtos.length} anúncios</span><span><b>${abaixo}</b> preços atuais abaixo da meta</span>${inv?`<span><b>${inv}</b> sem preço possível (margem alta demais)</span>`:''}<span>* taxa específica do produto</span><span>✎ CMV e preço de venda são editáveis direto na tabela</span></div>`;
-  const table=`<div class="panel scroll"><table><thead><tr><th colspan="${nFix}"></th>${ativos.map(k=>`<th class="grp" colspan="${k.tipo==='ml'?6:3}">${esc(k.nome)}</th>`).join('')}</tr>
-    <tr><th class="ck"><input type="checkbox" id="ckAll" aria-label="Selecionar todos" ${lista.length&&lista.every(p=>S.marcados.has(p.id))?'checked':''}></th><th>SKU</th><th>Produto</th><th class="r">Peso cobrado</th><th class="r">CMV (R$) ✎</th>${ativos.map(k=>`${k.tipo==='ml'?'<th class="r bl">Taxa ML % ✎</th><th class="r">Redução R$ ✎</th><th>Válida até ✎</th><th class="r">Sugerido</th>':'<th class="r bl">Sugerido</th>'}<th class="r">Preço de venda ✎</th><th class="r">Margem atual</th>`).join('')}</tr></thead>
-    <tbody>${rows||`<tr><td colspan="${nFix+ativos.reduce((a,k)=>a+(k.tipo==='ml'?6:3),0)}" class="muted">Nenhum produto encontrado para “${esc(S.busca)}”.</td></tr>`}</tbody></table></div>`;
-  const tools=`<div class="toolbar"><div class="grp"><input id="inBusca" type="search" placeholder="Buscar SKU, nome ou anúncio" value="${esc(S.busca)}" style="width:260px"></div>
+  if(!S.frete)return head+`<div class="state">Carregando tabela de frete do Mercado Livre…</div>`;
+  const lista=filtro();const hoje=hojeISO();const ativosIds=canaisAtivos(c).map(k=>k.id);const busca=!!S.busca.trim();
+  let nA=0,abaixo=0,inv=0,visKeys=[];
+  lista.forEach(({p,as})=>as.forEach(a=>{nA++;const r=calc(c,p,a,m);if(r.sug==null)inv++;if(r.d&&r.d.margem<m-0.0005)abaixo++;}));
+  const body=lista.map(({p,as,total})=>{
+    const pid=esc(p.id);const aberto=busca||!S.fechados.has(p.id);
+    const keys=as.map(a=>p.id+'|'+a.id);const todos=keys.length>0&&keys.every(k=>S.marcados.has(k));
+    if(aberto)visKeys.push(...keys);
+    const promoAtivas=as.filter(a=>a.promo&&+a.promo.reducao>0&&(!a.promo.ate||a.promo.ate>=hoje)).length;
+    const grp=`<tr class="grp-row"><td colspan="12"><div class="grp-in">
+      <input type="checkbox" id="gck_${pid}" data-gck="${pid}" ${todos?'checked':''} aria-label="Selecionar anúncios de ${esc(p.sku)}">
+      <button class="tog" data-tog="${pid}" aria-expanded="${aberto}" aria-label="${aberto?'Recolher':'Expandir'} ${esc(p.sku)}">${aberto?'▾':'▸'}</button>
+      <span class="sku">${esc(p.sku)}</span><span class="gnome" title="${esc(p.nome)}">${esc(p.nome)}</span>
+      <label class="gf">CMV R$ <input class="n cell" id="pf_${pid}_cmv" data-pf="${pid}|cmv" inputmode="decimal" value="${n2(+p.cmv)}"></label>
+      <label class="gf">Emb. R$ <input class="n cell" style="width:62px" id="pf_${pid}_emb" data-pf="${pid}|embalagem" inputmode="decimal" value="${n2(+p.embalagem)}"></label>
+      <span class="gf muted">Peso cobrado <b class="num">${n2(pesoCobrado(p))} kg</b></span>
+      <span class="gf muted">${total?`${as.length} de ${total} anúncios`:`${as.length} anúncio${as.length===1?'':'s'}`}</span>
+      ${promoAtivas?`<span class="chip promo">${promoAtivas} em promoção</span>`:''}
+      <button class="link" onclick="novoAnuncio('${pid}')">+ Anúncio</button><button class="link" onclick="editarProduto('${pid}')">Editar SKU</button>
+    </div></td></tr>`;
+    if(!aberto)return grp;
+    if(!as.length)return grp+`<tr class="anu-vazio"><td></td><td colspan="11" class="muted">Nenhum anúncio neste SKU. Clique em “+ Anúncio”.</td></tr>`;
+    return grp+as.map(a=>linhaAnuncio(c,p,a,m,hoje,ativosIds)).join('');
+  }).join('');
+  const allSel=visKeys.length>0&&visKeys.every(k=>S.marcados.has(k));
+  const table=`<div class="panel scroll" id="tblScroll"><table class="anu"><thead><tr>
+    <th class="ck"><input type="checkbox" id="ckAll" aria-label="Selecionar todos os anúncios visíveis" ${allSel?'checked':''}></th>
+    <th class="mlbc">Anúncio ✎</th><th>Família ✎</th><th>Canal ✎</th><th class="r">Taxa % ✎</th><th class="r">Redução R$ ✎</th><th>Válida até ✎</th><th class="r">ADS % ✎</th>
+    <th class="r">Sugerido</th><th class="r">Preço de venda ✎</th><th class="r">Margem atual</th><th></th></tr></thead>
+    <tbody>${body||`<tr><td colspan="12" class="muted">Nada encontrado para “${esc(S.busca)}”. A busca procura em SKU, nome, anúncio (MLB), família e canal.</td></tr>`}</tbody></table></div>`;
+  const tools=`<div class="toolbar"><div class="grp"><input id="inBusca" type="search" placeholder="Buscar SKU, nome, MLB ou família" value="${esc(S.busca)}" style="width:290px">
+      <button class="link" onclick="S.fechados.clear();render()">Expandir todos</button><button class="link" onclick="S.produtos.forEach(p=>S.fechados.add(p.id));render()">Recolher todos</button></div>
     <div class="grp"><button type="button" onclick="exportar()">Exportar Excel</button></div></div>`;
-  const p=S.produtos.find(x=>x.id===S.sel);
+  const sum=`<div class="summary"><span><b>${lista.length}</b> SKUs · <b>${nA}</b> anúncios</span><span><b>${abaixo}</b> preços abaixo da meta</span>${inv?`<span><b>${inv}</b> sem preço possível</span>`:''}<span>✎ editável direto na tabela</span></div>`;
   const nSel=S.marcados.size;
-  const bulk=nSel?`<div class="bulk"><b>${nSel} selecionado${nSel>1?'s':''}</b>${ml?`<button class="primary" onclick="promoLote()">Aplicar promoção ML</button><button onclick="removerPromoLote()">Remover promoção</button><button onclick="taxaLote()">Alterar taxa ML</button>`:''}<button class="link" onclick="S.marcados.clear();render()">Limpar seleção</button></div>`:'';
-  return head+tools+sum+bulk+`<div class="layout ${p?'has-detail':''}"><div style="min-width:0">${table}</div>${p?viewDetalhe(c,p):''}</div>`;
+  const bulk=nSel?`<div class="bulk"><b>${nSel} anúncio${nSel>1?'s':''} selecionado${nSel>1?'s':''}</b><button class="primary" onclick="promoLote()">Aplicar promoção</button><button onclick="removerPromoLote()">Remover promoção</button><button onclick="taxaLote()">Alterar taxa / ADS</button><button class="link" onclick="S.marcados.clear();render()">Limpar seleção</button></div>`:'';
+  let det='';if(S.sel){const [pid,aid]=S.sel.split('|');const p=S.produtos.find(x=>x.id===pid);const a=p?.anuncios?.[aid];if(a)det=viewDetalhe(c,p,{id:aid,...a});else S.sel=null;}
+  return head+tools+sum+bulk+`<div class="layout ${det?'has-detail':''}"><div style="min-width:0">${table}</div>${det}</div>`;
 }
-function viewDetalhe(c,p){
-  const ativos=canaisAtivos(c);if(!ativos.find(k=>k.id===S.canalDet))S.canalDet=ativos[0]?.id;
-  const k=S.canalDet;const m=+c.margem||0;
-  const sug=precoSugerido(c,k,p,S.frete,m);const simV=parseN(S.sim);
-  const P=isFinite(simV)&&simV>0?simV:sug;const d=P?dre(c,k,p,S.frete,P):null;
-  const linha=(a,b,neg=true)=>`<div><span>${a}</span><span>${neg?'− ':''}${brl(b)}</span></div>`;
-  const pr=k.startsWith('ml_')?promoAtiva(p,k,hojeISO()):null;const sugSem=pr?precoSugerido(c,k,p,S.frete,m,{semPromo:true}):null;
-  const g=k.startsWith('ml_')?grupoML(c,p):null;
-  const infoML=k.startsWith('ml_')?`<div class="note">Taxa ML: <b>${pct(cfgEfetiva(c,k,p).comissao)}</b>${pr?` · <span class="chip promo">promoção −${brl(+pr.reducao)} até ${dataBRc(pr.ate)}</span>`:''}</div>${pr?`<div class="promo-cmp"><span>Sugerido <b>com</b> promoção <b class="num">${brl(sug)}</b></span><span>Sugerido <b>sem</b> promoção <b class="num">${brl(sugSem)}</b></span></div>`:''}`:'';
-  return `<aside class="panel detail" aria-label="Detalhe do produto">
-    <div class="detail-head"><div><div class="sku">${esc(p.sku)}</div><div class="muted" style="white-space:normal">${esc(p.nome)}</div></div><button class="link" onclick="S.sel=null;render()" aria-label="Fechar detalhe">Fechar</button></div>
-    <div class="canal-tabs">${ativos.map(x=>`<button aria-pressed="${x.id===k}" onclick="S.canalDet='${x.id}';render()">${esc(x.nome)}</button>`).join('')}</div>
-    ${infoML}
+function linhaAnuncio(c,p,a,m,hoje,ativosIds){
+  const def=CANAIS.find(x=>x.id===a.canal)||CANAIS[0];const {vp,sug,d,e}=calc(c,p,a,m);
+  const key=p.id+'|'+a.id;const fid=f=>`f_${esc(p.id)}_${esc(a.id)}_${f}`;const da=f=>`data-af="${esc(key)}|${f}"`;
+  const pr=a.promo||{};const temP=+pr.reducao>0;const exp=temP&&pr.ate&&pr.ate<hoje;const ativa=promoAtiva(vp,a.canal,hoje);
+  const opts=CANAIS.filter(x=>ativosIds.includes(x.id)||x.id===a.canal).map(x=>`<option value="${x.id}"${x.id===a.canal?' selected':''}>${esc(x.nome)}</option>`).join('');
+  return `<tr data-row="${esc(key)}" class="${S.sel===key?'sel':''}">
+    <td class="ck"><input type="checkbox" id="${fid('ck')}" data-ck="${esc(key)}" ${S.marcados.has(key)?'checked':''} aria-label="Selecionar anúncio ${esc(a.mlb||'')}"></td>
+    <td class="mlbc"><input class="cell txt" id="${fid('mlb')}" ${da('mlb')} value="${esc(a.mlb||'')}" placeholder="MLB…" aria-label="Código do anúncio">${a.upid?`<div class="sub">${esc(a.upid)}</div>`:''}</td>
+    <td><input class="cell txt fam" id="${fid('familia')}" ${da('familia')} value="${esc(a.familia||'')}" placeholder="—" aria-label="Família"></td>
+    <td><select class="cell-sel" id="${fid('canal')}" ${da('canal')} aria-label="Canal">${opts}</select></td>
+    <td class="r"><input class="n cell" style="width:60px" id="${fid('taxa')}" ${da('taxa')} inputmode="decimal" value="${def.tipo==='ml'?pctIn(e.comissao):(a.taxa!=null?pctIn(a.taxa):'')}" placeholder="${def.tipo==='ml'?'':'faixa'}" aria-label="Taxa %"></td>
+    <td class="r"><input class="n cell${exp?' exp':''}" style="width:66px" id="${fid('reducao')}" ${da('reducao')} inputmode="decimal" value="${temP?n2(pr.reducao):''}" placeholder="—" title="${exp?'Promoção expirada':''}" aria-label="Redução da taxa em R$"></td>
+    <td><input type="date" class="cell date${exp?' exp':''}" id="${fid('ate')}" ${da('ate')} value="${esc(pr.ate||'')}" aria-label="Promoção válida até"></td>
+    <td class="r"><input class="n cell" style="width:50px" id="${fid('ads')}" ${da('ads')} inputmode="decimal" value="${pctIn(e.ads)}" aria-label="ADS %"></td>
+    <td class="r num sug">${sug==null?'<span class="chip bad">inviável</span>':brl(sug)}${ativa?`<span class="chip promo" title="Com redução de ${brl(+ativa.reducao)} até ${dataBRc(ativa.ate)}">promo até ${dataBR(ativa.ate)}</span>`:''}</td>
+    <td class="r"><input class="n cell" id="${fid('preco')}" ${da('preco')} inputmode="decimal" value="${+a.preco>0?n2(a.preco):''}" placeholder="—" aria-label="Preço de venda"></td>
+    <td class="r">${d?chipMargem(d.margem,m):'<span class="muted">—</span>'}</td>
+    <td class="r">${S.pendente==='rm:'+key?`<button class="link danger-t" onclick="removerAnuncio('${esc(p.id)}','${esc(a.id)}')">confirmar</button> <button class="link" onclick="S.pendente=null;render()">não</button>`:`<button class="link muted-btn" onclick="S.pendente='rm:${esc(key)}';render()" aria-label="Remover anúncio">remover</button>`}</td></tr>`;
+}
+function viewDetalhe(c,p,a){
+  const m=+c.margem||0;const k=a.canal;const {vp,sug}=calc(c,p,a,m);const simV=parseN(S.sim);
+  const P=isFinite(simV)&&simV>0?simV:sug;const d=P?dre(c,k,vp,S.frete,P):null;
+  const pr=promoAtiva(vp,k,hojeISO());const sugSem=pr?precoSugerido(c,k,vp,S.frete,m,{semPromo:true}):null;
+  const linha=(t,v)=>`<div><span>${t}</span><span>− ${brl(v)}</span></div>`;
+  return `<aside class="panel detail" aria-label="Detalhe do anúncio">
+    <div class="detail-head"><div><div class="sku">${esc(p.sku)}</div><div class="muted" style="white-space:normal">${esc(p.nome)}</div>
+      <div class="note"><b class="num">${esc(a.mlb||'sem código')}</b> · ${esc(nomeCanal(k))}${a.familia?` · família <span class="num">${esc(a.familia)}</span>`:''}</div></div>
+      <button class="link" onclick="S.sel=null;render()">Fechar</button></div>
+    ${pr?`<div class="promo-cmp"><span>Sugerido <b>com</b> promoção (−${brl(+pr.reducao)} até ${dataBRc(pr.ate)}) <b class="num">${brl(sug)}</b></span><span>Sugerido <b>sem</b> promoção <b class="num">${brl(sugSem)}</b></span></div>`:''}
     <div class="sim"><label class="label" for="inSim">Simular preço</label><input id="inSim" class="n" inputmode="decimal" placeholder="${n2(sug)}" value="${esc(S.sim)}">${S.sim?`<button class="link" onclick="S.sim='';render()">usar sugerido</button>`:''}</div>
     ${d?`<div class="dre">
       <div><span><b>Preço de venda</b>${isFinite(simV)&&simV>0?'':' <span class="tag">sugerido</span>'}</span><span><b>${brl(d.preco)}</b></span></div>
-      ${linha('Impostos ('+pct(+c.imposto)+')',d.imposto)}
-      ${linha('Assessoria / operação ('+pct(+c.despesas)+')',d.despesas)}
-      ${linha('Comissão ('+pct(d.pctCom)+')'+(d.promo?' c/ promoção −'+brl(+d.promo.reducao):'')+(d.descFixo?' c/ desconto −'+brl(d.descFixo):''),d.comissao)}
-      ${linha('ADS ('+pct(d.pctAds)+')',d.ads)}
-      ${linha(esc(d.rotFixo)+(d.faixa?' · '+esc(d.faixa):''),d.fixo)}
+      ${linha('Impostos ('+pct(+c.imposto)+')',d.imposto)}${linha('Assessoria / operação ('+pct(+c.despesas)+')',d.despesas)}
+      ${linha('Taxa ('+pct(d.pctCom)+')'+(d.promo?' c/ redução −'+brl(+d.promo.reducao):'')+(d.descFixo?' c/ desconto −'+brl(d.descFixo):''),d.comissao)}
+      ${linha('ADS ('+pct(d.pctAds)+')',d.ads)}${linha(esc(d.rotFixo)+(d.faixa?' · '+esc(d.faixa):''),d.fixo)}
       ${linha('CMV',d.cmv)}${linha('Embalagem',d.emb)}
       <div class="tot"><span>Lucro líquido</span><span>${brl(d.lucro)}</span></div>
       <div><span>Margem líquida</span><span>${chipMargem(d.margem,m)}</span></div></div>`:`<div class="warnbox">Não existe preço que atinja ${pct(m)} neste canal: a soma de taxas e margem passa de 100%.</div>`}
-    <p class="note">Peso cobrado ${n2(pesoCobrado(p))} kg (maior entre real ${n2(+p.peso)} kg e cúbico ${n2((+p.L||0)*(+p.C||0)*(+p.P||0)/6000)} kg).</p>
-    <button type="button" onclick="editarProduto('${esc(p.id)}')">Editar produto</button></aside>`;
+    <p class="note">Peso cobrado ${n2(pesoCobrado(p))} kg (maior entre real ${n2(+p.peso)} kg e cúbico ${n2((+p.L||0)*(+p.C||0)*(+p.P||0)/6000)} kg).</p></aside>`;
 }
 
 function viewProdutos(c){
-  const lista=filtrados();
-  const rows=lista.map(p=>`<tr data-edit="${esc(p.id)}"><td class="sku">${esc(p.sku)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
-    <td class="num muted">${esc([p.anuncioPremium,p.anuncioClassico].filter(Boolean).join(' · '))}</td>
+  const lista=filtro();
+  const rows=lista.map(({p})=>{const as=anuncios(p);const fams=[...new Set(as.map(a=>a.familia).filter(Boolean))];
+    return `<tr data-edit="${esc(p.id)}"><td class="sku">${esc(p.sku)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
     <td class="r num">${[p.L,p.C,p.P].map(v=>n2(+v||0).replace(',00','')).join('×')}</td><td class="r num">${n2(+p.peso)}</td><td class="r num">${brl(+p.cmv)}</td><td class="r num">${brl(+p.embalagem)}</td>
-    <td class="num">${pct(cfgEfetiva(c,'ml_premium',p).comissao)} / ${pct(cfgEfetiva(c,'ml_classico',p).comissao)}${chipPromo(p)}</td></tr>`).join('');
-  return `<div class="toolbar"><div><h1>Produtos · ${esc(c.nome)}</h1><p class="sub">${S.produtos.length} anúncios cadastrados. Clique numa linha para editar.</p></div>
-    <div class="grp"><button onclick="importar()">Importar do Excel</button><button class="primary" onclick="editarProduto(null)">+ Novo produto</button></div></div>
-    <div class="toolbar"><input id="inBusca" type="search" placeholder="Buscar SKU, nome ou anúncio" value="${esc(S.busca)}" style="width:260px"></div>
-    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>SKU</th><th>Produto</th><th>Anúncios</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Embalagem</th><th>Taxa ML Premium / Clássico</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    <td class="r num">${as.length}</td><td class="num muted fams" title="${esc(fams.join(', '))}">${esc(fams.join(', '))}</td></tr>`;}).join('');
+  return `<div class="toolbar"><div><h1>Produtos · ${esc(c.nome)}</h1><p class="sub">${S.produtos.length} SKUs. Clique numa linha para editar os dados do SKU. Os anúncios de cada SKU ficam na aba Precificação.</p></div>
+    <div class="grp"><button onclick="importar()">Importar do Excel</button><button class="primary" onclick="editarProduto(null)">+ Novo SKU</button></div></div>
+    <div class="toolbar"><input id="inBusca" type="search" placeholder="Buscar SKU, nome, MLB ou família" value="${esc(S.busca)}" style="width:290px"></div>
+    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>SKU</th><th>Produto</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Embalagem</th><th class="r">Anúncios</th><th>Famílias</th></tr></thead><tbody>${rows||`<tr><td colspan="8" class="muted">Nada encontrado.</td></tr>`}</tbody></table></div>`
     :`<div class="panel empty"><h2>Nenhum produto ainda</h2><p>Cole as linhas da sua planilha em “Importar do Excel” ou cadastre um por um.</p></div>`}`;
 }
 
 function inPct(id,v,attrs=''){return `<input class="n" id="${id}" inputmode="decimal" value="${pctIn(v)}" ${attrs}>`;}
 function viewParametros(c){
   const fr=S.frete;
-  const canalCard=k=>{const cfg=c.canais[k.id]||{};
-    let body='';
-    if(k.tipo==='ml'){body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_comissao">Taxa padrão %</label>${inPct('p_'+k.id+'_comissao',cfg.comissao,`data-cp="${k.id}.comissao"`)}</div><div class="field"><label class="label" for="p_${k.id}_ads">ADS %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div></div><p class="note">Taxa padrão vale para produtos novos. A taxa de cada produto é editada na tabela de Precificação. Frete pela tabela do Mercado Livre, conforme peso cobrado e faixa de preço.</p>`;}
+  const canalCard=k=>{const cfg=c.canais[k.id]||{};let body='';
+    if(k.tipo==='ml'){body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_comissao">Taxa padrão %</label>${inPct('p_'+k.id+'_comissao',cfg.comissao,`data-cp="${k.id}.comissao"`)}</div>
+      <div class="field"><label class="label" for="p_${k.id}_ads">ADS padrão %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div></div><p class="note">Valem para anúncios sem taxa própria. A taxa de cada anúncio é editada na tabela de Precificação. Frete pela tabela do Mercado Livre, conforme peso cobrado e faixa de preço.</p>`;}
     else{const fx=cfg.faixas||[];
-      body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_ads">ADS %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div>
+      body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_ads">ADS padrão %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div>
       <div class="field"><label class="label" for="p_${k.id}_ff">Frete pago pelo vendedor (R$)</label><input class="n" id="p_${k.id}_ff" inputmode="decimal" value="${n2(+cfg.freteFixo||0)}" data-cp="${k.id}.freteFixo" data-tipo="rs"></div></div>
       <table class="ov-table"><thead><tr><th>A partir de (R$)</th><th>Comissão %</th><th>Taxa fixa (R$)</th><th></th></tr></thead><tbody>
       ${fx.map((f,i)=>`<tr><td><input class="n" id="fx_${k.id}_${i}_ini" inputmode="decimal" value="${n2(+f.ini)}" data-fx="${k.id}.${i}.ini" data-tipo="rs"></td>
@@ -347,13 +396,6 @@ function viewParametros(c){
       <div><button onclick="addFaixa('${k.id}')">+ Faixa de preço</button></div>
       <p class="note">Confirme os valores no painel do vendedor. As regras deste canal mudam com frequência.</p>`;}
     return `<section class="panel card"><div class="card-head"><h2>${esc(k.nome)}</h2><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="at_${k.id}" data-ativo="${k.id}" ${cfg.ativo?'checked':''}> Ativo</label></div>${body}</section>`;};
-  const tgs=c.tarifasML||[];const usos=id=>S.produtos.filter(p=>grupoML(c,p)?.id===id).length;
-  const tarifasT=`<section class="panel card"><div><h2>Tarifas Mercado Livre por categoria</h2><p class="note">Cada categoria de produto tem sua comissão. Altere aqui e todos os produtos da tarifa se atualizam. O produto escolhe a tarifa na tabela de Precificação ou no cadastro.</p></div>
-    <div class="scroll"><table class="ov-table"><thead><tr><th>Nome da tarifa</th><th>Premium %</th><th>Clássico %</th><th class="r">Produtos</th><th></th></tr></thead><tbody>
-    ${tgs.map((g,i)=>{const u=usos(g.id);return `<tr><td><input id="tg_${i}_nome" value="${esc(g.nome)}" data-tg="${i}.nome" style="width:170px"></td><td>${inPct(`tg_${i}_premium`,g.premium,`data-tg="${i}.premium"`)}</td><td>${inPct(`tg_${i}_classico`,g.classico,`data-tg="${i}.classico"`)}</td>
-      <td class="r num">${u}</td><td>${tgs.length>1&&!u?`<button class="link" onclick="remTarifa(${i})">remover</button>`:(tgs.length>1?'<span class="note">em uso</span>':'')}</td></tr>`;}).join('')}</tbody></table></div>
-    <div><button onclick="addTarifa()">+ Nova tarifa</button></div>
-    <p class="note">A primeira tarifa da lista é a padrão para produtos novos.</p></section>`;
   const freteT=fr?`<section class="panel card"><div class="card-head"><div><h2>Tabela de frete Mercado Livre</h2><p class="note">Vale para todos os clientes. Referência: ${esc(fr.atualizado||'')}. Edite um valor e saia do campo para salvar.</p></div>
       <div class="field"><label class="label" for="frAtual">Referência</label><input id="frAtual" value="${esc(fr.atualizado||'')}" style="width:110px"></div></div>
     <div class="scroll"><table class="frete"><thead><tr><th>Peso</th>${fr.faixasPreco.map(f=>`<th class="r">${esc(f.nome)}</th>`).join('')}</tr></thead><tbody>
@@ -364,49 +406,40 @@ function viewParametros(c){
     <div class="field"><label class="label" for="pc_nome">Nome</label><input id="pc_nome" value="${esc(c.nome)}" data-cn="nome"></div>
     <div class="field"><label class="label" for="pc_imp">Impostos %</label>${inPct('pc_imp',c.imposto,'data-cn="imposto"')}</div>
     <div class="field"><label class="label" for="pc_desp">Assessoria / operação %</label>${inPct('pc_desp',c.despesas,'data-cn="despesas"')}</div>
-    <div class="field"><label class="label" for="pc_marg">Margem padrão %</label>${inPct('pc_marg',c.margem,'data-cn="margem"')}</div></div>
-    <p class="note">ADS diferente para um produto (ex.: afiliados 12%) é definido no cadastro do produto.</p></section>
+    <div class="field"><label class="label" for="pc_marg">Margem padrão %</label>${inPct('pc_marg',c.margem,'data-cn="margem"')}</div></div></section>
   <div class="cards">${CANAIS.map(canalCard).join('')}</div>${freteT}
   <section class="panel card"><h2>Excluir cliente</h2><p class="note">Remove o cliente e todos os produtos dele. Não dá para desfazer.</p>
-    <div id="delCli">${S.pendente==='delCli'?`<div class="sim"><span>Excluir “${esc(c.nome)}” e ${S.produtos.length} produtos?</span><button class="danger" onclick="excluirCliente()">Sim, excluir</button><button onclick="S.pendente=null;render()">Cancelar</button></div>`:`<button class="danger" onclick="S.pendente='delCli';render()">Excluir cliente</button>`}</div></section>`;
+    <div>${S.pendente==='delCli'?`<div class="sim"><span>Excluir “${esc(c.nome)}” e ${S.produtos.length} SKUs?</span><button class="danger" onclick="excluirCliente()">Sim, excluir</button><button onclick="S.pendente=null;render()">Cancelar</button></div>`:`<button class="danger" onclick="S.pendente='delCli';render()">Excluir cliente</button>`}</div></section>`;
 }
 
 /* ---------- Eventos ---------- */
 document.addEventListener('input',e=>{
   const t=e.target;
-  if(t.id==='inBusca'){S.busca=t.value;debounce('busca',150,render);}
+  if(t.id==='inBusca'){S.busca=t.value;debounce('busca',180,render);}
   else if(t.id==='inSim'){S.sim=t.value;debounce('sim',250,render);}
-  else if(t.id==='inMargem'){const v=parseN(t.value);if(isFinite(v)&&v>=0&&v<100){debounce('margem',500,()=>upCliente({margem:v/100}));}}
+  else if(t.id==='inMargem'){const v=parseN(t.value);if(isFinite(v)&&v>=0&&v<100)debounce('margem',500,()=>upCliente({margem:v/100}));}
 });
 document.addEventListener('change',e=>{
   const t=e.target;const c=cli();if(!c)return;
-  if(t.id==='cliSel'){S.cid=t.value;try{localStorage.setItem('prec_cli',S.cid)}catch{};S.sel=null;S.sim='';S.marcados.clear();assinarProdutos();render();return;}
-  if(t.dataset.pcmv||t.dataset.ppa){
-    const [pid,canal]=(t.dataset.pcmv||t.dataset.ppa).split('|');const p=S.produtos.find(x=>x.id===pid);if(!p)return;
-    const txt=t.value.trim();const v=parseN(txt);
-    if(txt&&!(isFinite(v)&&v>=0)){toast('Valor inválido. Use números, ex.: 51,52');t.value=t.dataset.pcmv?n2(+p.cmv):n2(p.precoAtual?.[canal]);return;}
-    let patch;
-    if(t.dataset.pcmv){const nv=txt?v:0;if(nv===+p.cmv)return;p.cmv=nv;patch={cmv:nv};}
-    else{const nv=txt&&v>0?v:null;if(nv===(p.precoAtual?.[canal]??null))return;p.precoAtual={...(p.precoAtual||{}),[canal]:nv};patch={precoAtual:{[canal]:nv}};}
-    render();const path=`clientes/${S.cid}/produtos/${pid}`;gravar(path,()=>S.db.doc(path).update(patch));return;}
+  if(t.id==='cliSel'){S.cid=t.value;try{localStorage.setItem('prec_cli',S.cid)}catch{};S.sel=null;S.sim='';S.marcados.clear();S.fechados.clear();assinarProdutos();render();return;}
   if(t.dataset.ck){t.checked?S.marcados.add(t.dataset.ck):S.marcados.delete(t.dataset.ck);render();return;}
-  if(t.id==='ckAll'){const l=filtrados();if(t.checked)l.forEach(p=>S.marcados.add(p.id));else l.forEach(p=>S.marcados.delete(p.id));render();return;}
-  if(t.dataset.ptx||t.dataset.pred||t.dataset.pate){
-    const [pid,canal]=(t.dataset.ptx||t.dataset.pred||t.dataset.pate).split('|');const p=S.produtos.find(x=>x.id===pid);if(!p)return;
-    const path=`clientes/${S.cid}/produtos/${pid}`;let patch;
-    if(t.dataset.ptx){const v=parseN(t.value);if(!(isFinite(v)&&v>=0&&v<100)){toast('Taxa inválida. Ex.: 16,5');render();return;}
-      p.overrides={...(p.overrides||{}),[canal]:{...((p.overrides||{})[canal]||{}),comissao:v/100}};patch={overrides:{[canal]:{comissao:v/100}}};}
-    else if(t.dataset.pred){const txt=t.value.trim();const v=parseN(txt);if(txt&&!(isFinite(v)&&v>=0)){toast('Valor inválido. Ex.: 5,68');render();return;}
-      const r=txt?v:0;const cur=(p.promoML||{})[canal]||{};p.promoML={...(p.promoML||{}),[canal]:{...cur,reducao:r}};patch={promoML:{[canal]:{reducao:r}}};
-      if(r>0&&!cur.ate)toast('Informe a data final da promoção na coluna "Válida até".');}
-    else{const cur=(p.promoML||{})[canal]||{};p.promoML={...(p.promoML||{}),[canal]:{...cur,ate:t.value||null}};patch={promoML:{[canal]:{ate:t.value||null}}};}
-    render();gravar(path,()=>S.db.doc(path).update(patch));return;}
-  if(t.dataset.ptg){const p=S.produtos.find(x=>x.id===t.dataset.ptg);if(!p)return;p.tarifaML=t.value;render();const path=`clientes/${S.cid}/produtos/${p.id}`;gravar(path,()=>S.db.doc(path).update({tarifaML:t.value}));return;}
-  if(t.id==='bulkTg'){if(!t.value)return;const ids=[...S.marcados];ids.forEach(id=>{const p=S.produtos.find(x=>x.id===id);if(p)p.tarifaML=t.value;const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).update({tarifaML:t.value}));});
-    toast(`Tarifa alterada em ${ids.length} produto${ids.length>1?'s':''}.`);render();return;}
-  if(t.dataset.tg){const [i,f]=t.dataset.tg.split('.');const tgs=structuredClone(c.tarifasML||[]);
-    if(f==='nome'){if(!t.value.trim()){render();return;}tgs[+i].nome=t.value.trim();}else{const v=parseN(t.value);if(!isFinite(v)){toast('Valor inválido.');render();return;}tgs[+i][f]=v/100;}
-    upCliente({tarifasML:tgs});return;}
+  if(t.dataset.gck){const it=filtro().find(x=>x.p.id===t.dataset.gck);if(it)it.as.forEach(a=>{const k=it.p.id+'|'+a.id;t.checked?S.marcados.add(k):S.marcados.delete(k);});render();return;}
+  if(t.id==='ckAll'){const busca=!!S.busca.trim();filtro().forEach(({p,as})=>{if(!busca&&S.fechados.has(p.id))return;as.forEach(a=>{const k=p.id+'|'+a.id;t.checked?S.marcados.add(k):S.marcados.delete(k);});});render();return;}
+  if(t.dataset.pf){const [pid,f]=t.dataset.pf.split('|');const p=S.produtos.find(x=>x.id===pid);if(!p)return;const txt=t.value.trim();const v=parseN(txt);
+    if(txt&&!(isFinite(v)&&v>=0)){toast('Valor inválido. Use números, ex.: 51,52');render();return;}const nv=txt?v:0;if(nv===+p[f])return;p[f]=nv;render();
+    gravar(pPath(pid),()=>S.db.doc(pPath(pid)).update({[f]:nv}));return;}
+  if(t.dataset.af){const [pid,aid,f]=t.dataset.af.split('|');const p=S.produtos.find(x=>x.id===pid);const a=p?.anuncios?.[aid];if(!a)return;
+    const txt=t.value.trim();let val;
+    if(f==='mlb'){val=txt?txt.toUpperCase().replace(/\s/g,''):null;}
+    else if(f==='familia'){val=txt||null;}
+    else if(f==='canal'||f==='ate'){val=t.value||null;}
+    else{const v=parseN(txt);if(txt&&!(isFinite(v)&&v>=0)){toast('Valor inválido.');render();return;}
+      if(f==='taxa'||f==='ads'){if(txt&&v>=100){toast('Use percentual. Ex.: 16,5');render();return;}val=txt?v/100:null;}else val=txt?v:null;}
+    let patch;
+    if(f==='reducao'||f==='ate'){const pr={...(a.promo||{})};if(f==='reducao')pr.reducao=val||0;else pr.ate=val;a.promo=pr;patch={promo:pr};
+      if(f==='reducao'&&val>0&&!pr.ate)toast('Informe a data final em “Válida até”.');}
+    else{a[f]=val;patch={[f]:val};if(f==='canal'){a.taxa=null;a.ads=null;patch.taxa=null;patch.ads=null;}}
+    render();salvarAnuncio(pid,aid,patch);return;}
   if(t.dataset.ativo){upCliente({canais:{[t.dataset.ativo]:{ativo:t.checked}}});return;}
   if(t.dataset.cn){const k=t.dataset.cn;if(k==='nome'){if(t.value.trim())upCliente({nome:t.value.trim()});return;}
     const v=parseN(t.value);if(isFinite(v))upCliente({[k]:v/100});else{toast('Valor inválido.');render();}return;}
@@ -419,42 +452,47 @@ document.addEventListener('change',e=>{
     S.frete=fr;render();gravar('config/freteML',()=>S.db.doc('config/freteML').set(fr));}
 });
 document.addEventListener('click',e=>{
-  const tr=e.target.closest('tr[data-id]');if(tr&&!e.target.closest('button,input,select,label')){S.sel=S.sel===tr.dataset.id?null:tr.dataset.id;S.sim='';render();return;}
+  const tg=e.target.closest('[data-tog]');if(tg){const id=tg.dataset.tog;S.fechados.has(id)?S.fechados.delete(id):S.fechados.add(id);render();return;}
+  const tr=e.target.closest('tr[data-row]');if(tr&&!e.target.closest('button,input,select,label')){S.sel=S.sel===tr.dataset.row?null:tr.dataset.row;S.sim='';render();return;}
   const te=e.target.closest('tr[data-edit]');if(te){editarProduto(te.dataset.edit);}
 });
 function addFaixa(k){const c=cli();const fx=structuredClone(c.canais[k].faixas||[]);const last=fx[fx.length-1]||{ini:0,pct:0.1,fixo:0};fx.push({ini:(+last.ini||0)+100,pct:last.pct,fixo:last.fixo});upCliente({canais:{[k]:{faixas:fx}}});}
-function addTarifa(){const c=cli();const tgs=structuredClone(c.tarifasML||[]);const last=tgs[tgs.length-1]||{premium:0.165,classico:0.115};
-  tgs.push({id:'t'+Date.now().toString(36),nome:'Tarifa '+String.fromCharCode(65+tgs.length),premium:last.premium,classico:last.classico});upCliente({tarifasML:tgs});}
-function remTarifa(i){const c=cli();const tgs=structuredClone(c.tarifasML);tgs.splice(i,1);upCliente({tarifasML:tgs});}
-function promoLote(){const ids=[...S.marcados];const fim=new Date();fim.setDate(fim.getDate()+14);
-  const dflt=fim.toISOString().slice(0,10);
-  modal(`<h2>Aplicar promoção ML</h2><p class="note">Vale para os ${ids.length} produtos selecionados. Informe a redução da tarifa em reais, como o Mercado Livre mostra. Deixe em branco o tipo de anúncio que não entra na promoção.</p>
-  <div class="form-grid"><div class="field"><label class="label" for="plPre">Redução Premium (R$)</label><input id="plPre" class="num" inputmode="decimal" placeholder="ex.: 5,68"></div>
-  <div class="field"><label class="label" for="plCla">Redução Clássico (R$)</label><input id="plCla" class="num" inputmode="decimal" placeholder="ex.: 3,20"></div>
-  <div class="field"><label class="label" for="plAte">Válida até</label><input id="plAte" type="date" value="${dflt}"></div></div>
-  <p class="note">No dia seguinte à data final, o sistema volta sozinho para a tarifa normal.</p>
-  <div class="sim"><button class="primary" id="plOk">Aplicar</button><button onclick="fecharModal()">Cancelar</button></div>`);
-  $('#plOk').onclick=()=>{const pre=parseN($('#plPre').value),cla=parseN($('#plCla').value),ate=$('#plAte').value;
-    if(!ate){toast('Informe a data final da promoção.');return;}if(!(pre>0)&&!(cla>0)){toast('Informe a redução de ao menos um tipo de anúncio.');return;}
-    const patch={promoML:{}};if(pre>0)patch.promoML.ml_premium={reducao:pre,ate};if(cla>0)patch.promoML.ml_classico={reducao:cla,ate};
-    ids.forEach(id=>{const p=S.produtos.find(x=>x.id===id);if(p)p.promoML={...(p.promoML||{}),...structuredClone(patch.promoML)};const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).update(patch));});
-    fecharModal();toast(`Promoção aplicada em ${ids.length} produto${ids.length>1?'s':''}.`);render();};}
-function taxaLote(){const ids=[...S.marcados];
-  modal(`<h2>Alterar taxa ML</h2><p class="note">Vale para os ${ids.length} produtos selecionados. Deixe em branco o tipo de anúncio que não muda.</p>
-  <div class="form-grid"><div class="field"><label class="label" for="tlPre">Taxa Premium %</label><input id="tlPre" class="num" inputmode="decimal" placeholder="ex.: 16,5"></div>
-  <div class="field"><label class="label" for="tlCla">Taxa Clássico %</label><input id="tlCla" class="num" inputmode="decimal" placeholder="ex.: 11,5"></div></div>
-  <div class="sim"><button class="primary" id="tlOk">Aplicar</button><button onclick="fecharModal()">Cancelar</button></div>`);
-  $('#tlOk').onclick=()=>{const pre=parseN($('#tlPre').value),cla=parseN($('#tlCla').value);const ok=v=>isFinite(v)&&v>=0&&v<100;
-    if(!ok(pre)&&!ok(cla)){toast('Informe ao menos uma taxa.');return;}
-    const ov={};if(ok(pre))ov.ml_premium={comissao:pre/100};if(ok(cla))ov.ml_classico={comissao:cla/100};
-    ids.forEach(id=>{const p=S.produtos.find(x=>x.id===id);if(p){const o=structuredClone(p.overrides||{});for(const k in ov)o[k]={...(o[k]||{}),...ov[k]};p.overrides=o;}
-      const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).update({overrides:ov}));});
-    fecharModal();toast(`Taxa alterada em ${ids.length} produto${ids.length>1?'s':''}.`);render();};}
-function removerPromoLote(){const ids=[...S.marcados];let n=0;
-  ids.forEach(id=>{const p=S.produtos.find(x=>x.id===id);if(!p||!p.promoML)return;n++;const doc=structuredClone(p);delete doc.id;delete doc.promoML;delete p.promoML;
-    const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).set(doc));});
-  toast(n?`Promoção removida de ${n} produto${n>1?'s':''}.`:'Nenhum dos selecionados tinha promoção.');render();}
 function remFaixa(k,i){const c=cli();const fx=structuredClone(c.canais[k].faixas);fx.splice(i,1);upCliente({canais:{[k]:{faixas:fx}}});}
+
+/* ---------- Anúncios: criar, remover, lote ---------- */
+function novoAnuncio(pid){const c=cli();const p=S.produtos.find(x=>x.id===pid);if(!p)return;
+  const canal=canaisAtivos(c).find(k=>k.tipo==='ml')?.id||canaisAtivos(c)[0]?.id||'ml_premium';
+  const aid=novoId('a');const a={canal,mlb:null,familia:null,preco:null,ordem:Math.max(0,...anuncios(p).map(x=>+x.ordem||0))+1};
+  p.anuncios={...(p.anuncios||{}),[aid]:a};S.fechados.delete(pid);render();salvarAnuncio(pid,aid,a);
+  setTimeout(()=>document.getElementById(`f_${pid}_${aid}_mlb`)?.focus(),30);}
+function removerAnuncio(pid,aid){const p=S.produtos.find(x=>x.id===pid);if(!p)return;S.pendente=null;
+  const doc=structuredClone(p);delete doc.id;delete doc.anuncios[aid];delete p.anuncios[aid];S.marcados.delete(pid+'|'+aid);if(S.sel===pid+'|'+aid)S.sel=null;
+  render();gravar(pPath(pid),()=>S.db.doc(pPath(pid)).set(doc).then(()=>toast('Anúncio removido.')));}
+function aplicarLote(fn){const porP={};
+  for(const key of S.marcados){const [pid,aid]=key.split('|');const p=S.produtos.find(x=>x.id===pid);const a=p?.anuncios?.[aid];if(!a)continue;
+    const pt=fn(a);if(!pt)continue;Object.assign(a,structuredClone(pt));(porP[pid]=porP[pid]||{})[aid]=pt;}
+  let n=0;for(const pid in porP){n+=Object.keys(porP[pid]).length;const up={anuncios:porP[pid]};gravar(pPath(pid),()=>S.db.doc(pPath(pid)).update(up));}
+  render();return n;}
+const plural=(n,s)=>`${n} ${s}${n===1?'':'s'}`;
+function promoLote(){const fim=new Date();fim.setDate(fim.getDate()+14);const dflt=fim.toISOString().slice(0,10);const c=cli();const ativos=canaisAtivos(c);
+  modal(`<h2>Aplicar promoção</h2><p class="note">Vale para os ${S.marcados.size} anúncios selecionados. Informe a redução da taxa em reais, como o marketplace mostra. Deixe em branco o canal que não entra.</p>
+  <div class="form-grid">${ativos.map(k=>`<div class="field"><label class="label" for="pl_${k.id}">Redução ${esc(k.nome)} (R$)</label><input id="pl_${k.id}" class="num" inputmode="decimal" placeholder="ex.: 5,68"></div>`).join('')}
+  <div class="field"><label class="label" for="plAte">Válida até</label><input id="plAte" type="date" value="${dflt}"></div></div>
+  <p class="note">No dia seguinte à data final, o cálculo volta sozinho para a taxa normal.</p>
+  <div class="sim"><button class="primary" id="plOk">Aplicar</button><button onclick="fecharModal()">Cancelar</button></div>`);
+  $('#plOk').onclick=()=>{const ate=$('#plAte').value;const red={};ativos.forEach(k=>{const v=parseN($('#pl_'+k.id).value);if(v>0)red[k.id]=v;});
+    if(!ate){toast('Informe a data final da promoção.');return;}if(!Object.keys(red).length){toast('Informe a redução de ao menos um canal.');return;}
+    const n=aplicarLote(a=>red[a.canal]?{promo:{reducao:red[a.canal],ate}}:null);fecharModal();toast(`Promoção aplicada em ${plural(n,'anúncio')}.`);};}
+function removerPromoLote(){const n=aplicarLote(a=>a.promo&&+a.promo.reducao>0?{promo:null}:null);toast(n?`Promoção removida de ${plural(n,'anúncio')}.`:'Nenhum dos selecionados tinha promoção.');}
+function taxaLote(){const c=cli();const ativos=canaisAtivos(c);
+  modal(`<h2>Alterar taxa / ADS</h2><p class="note">Vale para os ${S.marcados.size} anúncios selecionados, conforme o canal de cada um. Deixe em branco o que não muda.</p>
+  <div class="form-grid">${ativos.map(k=>`<div class="field"><label class="label" for="tl_${k.id}">Taxa ${esc(k.nome)} %</label><input id="tl_${k.id}" class="num" inputmode="decimal" placeholder="${k.tipo==='ml'?pctIn(c.canais[k.id]?.comissao):'faixa'}"></div>`).join('')}
+  <div class="field"><label class="label" for="tlAds">ADS % (todos)</label><input id="tlAds" class="num" inputmode="decimal" placeholder="ex.: 4"></div></div>
+  <div class="sim"><button class="primary" id="tlOk">Aplicar</button><button onclick="fecharModal()">Cancelar</button></div>`);
+  $('#tlOk').onclick=()=>{const ok=v=>isFinite(v)&&v>=0&&v<100;const tx={};ativos.forEach(k=>{const v=parseN($('#tl_'+k.id).value);if(ok(v))tx[k.id]=v/100;});const ads=parseN($('#tlAds').value);
+    if(!Object.keys(tx).length&&!ok(ads)){toast('Informe ao menos um valor.');return;}
+    const n=aplicarLote(a=>{const pt={};if(tx[a.canal]!=null)pt.taxa=tx[a.canal];if(ok(ads))pt.ads=ads/100;return Object.keys(pt).length?pt:null;});
+    fecharModal();toast(`Alterado em ${plural(n,'anúncio')}.`);};}
 
 /* ---------- Clientes ---------- */
 function slug(s){return (s||'cliente').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'cliente';}
@@ -464,8 +502,7 @@ function novoCliente(){modal(`<h2>Novo cliente</h2><div class="field"><label cla
   $('#ncNome').focus();
   $('#ncOk').onclick=async()=>{const nome=$('#ncNome').value.trim();if(!nome){toast('Informe o nome.');return;}
     let id=slug(nome);if(S.clientes.some(c=>c.id===id))id+='-'+Date.now().toString(36);
-    const doc={nome,criadoEm:new Date().toISOString(),...structuredClone(PADRAO)};
-    try{await S.db.doc('clientes/'+id).set(doc);S.cid=id;try{localStorage.setItem('prec_cli',id)}catch{};fecharModal();S.view='parametros';location.hash='parametros';assinarProdutos();toast('Cliente criado.');}
+    try{await S.db.doc('clientes/'+id).set({nome,criadoEm:new Date().toISOString(),...structuredClone(PADRAO)});S.cid=id;try{localStorage.setItem('prec_cli',id)}catch{};fecharModal();S.view='parametros';location.hash='parametros';assinarProdutos();toast('Cliente criado.');}
     catch(err){toast(err?.code==='invalid_argument'?'Você não tem permissão para criar clientes.':'Não foi possível criar o cliente.');}};
 }
 $('#btnNovoCli').onclick=novoCliente;
@@ -473,84 +510,81 @@ async function excluirCliente(){const c=cli();if(!c)return;S.pendente=null;
   try{for(const p of S.produtos)await S.db.doc(`clientes/${c.id}/produtos/${p.id}`).delete();await S.db.doc('clientes/'+c.id).delete();
     S.cid=null;S.view='precos';location.hash='precos';toast('Cliente excluído.');}catch(e){toast('Não foi possível excluir.');}}
 
-/* ---------- Produtos: editar ---------- */
+/* ---------- SKU: editar ---------- */
 function modal(html){$('#modalRoot').innerHTML=`<div class="overlay" onclick="if(event.target===this)fecharModal()"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;}
 function fecharModal(){$('#modalRoot').innerHTML='';}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modalRoot').innerHTML)fecharModal();});
 function editarProduto(id){
-  const c=cli();const p=id?S.produtos.find(x=>x.id===id):{sku:'',nome:'',L:0,C:0,P:0,peso:0,cmv:0,embalagem:0,overrides:{},precoAtual:{}};
-  if(!p)return;const ov=p.overrides||{};
+  const p=id?S.produtos.find(x=>x.id===id):{sku:'',nome:'',L:0,C:0,P:0,peso:0,cmv:0,embalagem:0};if(!p)return;
   const f=(k,lab,v,num=true,cls='')=>`<div class="field ${cls}"><label class="label" for="ep_${k}">${lab}</label><input id="ep_${k}" ${num?'inputmode="decimal" class="num"':''} value="${esc(num?n2(v):v??'')}"></div>`;
-  modal(`<h2>${id?'Editar produto':'Novo produto'}</h2>
+  modal(`<h2>${id?'Editar SKU':'Novo SKU'}</h2>
   <div class="form-grid">${f('sku','SKU',p.sku,false)}${f('nome','Nome',p.nome,false,'wide')}
-  ${f('anuncioPremium','Anúncio Premium',p.anuncioPremium,false)}${f('anuncioClassico','Anúncio Clássico',p.anuncioClassico,false)}
   ${f('L','Largura (cm)',p.L)}${f('C','Comprimento (cm)',p.C)}${f('P','Altura (cm)',p.P)}${f('peso','Peso real (kg)',p.peso)}
   ${f('cmv','CMV (R$)',p.cmv)}${f('embalagem','Embalagem (R$)',p.embalagem)}</div>
-  <div><div class="label" style="margin-bottom:6px">Promoção Mercado Livre</div><div class="scroll"><table class="ov-table"><thead><tr><th>Anúncio</th><th>Redução da tarifa (R$)</th><th>Válida até</th><th></th></tr></thead><tbody>
-  ${['ml_premium','ml_classico'].map(k=>{const pr=(p.promoML||{})[k]||{};const exp=pr.ate&&pr.ate<hojeISO();return `<tr><td>${k==='ml_premium'?'Premium':'Clássico'}</td>
-    <td><input class="n" id="ep_pr_${k}" inputmode="decimal" value="${pr.reducao?n2(pr.reducao):''}" placeholder="0,00"></td><td><input type="date" id="ep_pa2_${k}" value="${esc(pr.ate||'')}"></td><td>${exp?'<span class="chip warn">expirada</span>':''}</td></tr>`;}).join('')}</tbody></table></div>
-  <p class="note">Deixe a redução em branco para não ter promoção. Depois da data final, o cálculo volta para a tarifa normal.</p></div>
-  <div><div class="label" style="margin-bottom:6px">Por canal</div><div class="scroll"><table class="ov-table"><thead><tr><th>Canal</th><th>Preço atual (R$)</th><th>Taxa / comissão %</th><th>ADS %</th><th>Desconto tarifa (R$)</th></tr></thead><tbody>
-  ${CANAIS.map(k=>{const o=ov[k.id]||{};return `<tr><td>${esc(k.nome)}</td><td><input class="n" id="ep_pa_${k.id}" inputmode="decimal" value="${n2(p.precoAtual?.[k.id])}"></td>
-    <td><input class="n" id="ep_co_${k.id}" inputmode="decimal" value="${k.tipo==='ml'?pctIn(cfgEfetiva(c,k.id,p).comissao):(o.comissao!=null?pctIn(o.comissao):'')}" placeholder="${k.tipo==='ml'?pctIn(c.canais[k.id]?.comissao):'faixas'}"></td>
-    <td><input class="n" id="ep_ad_${k.id}" inputmode="decimal" value="${o.ads!=null?pctIn(o.ads):''}" placeholder="${pctIn(c.canais[k.id]?.ads)}"></td>
-    <td><input class="n" id="ep_de_${k.id}" inputmode="decimal" value="${o.desconto?n2(o.desconto):''}" placeholder="0,00"></td></tr>`;}).join('')}</tbody></table></div>
-  <p class="note">Use ADS 12% para anúncios de afiliados. Desconto de tarifa é um abatimento permanente em R$.</p></div>
+  ${id?`<p class="note">${plural(anuncios(p).length,'anúncio')} neste SKU. Os anúncios são editados na tabela de Precificação.</p>`:'<p class="note">Depois de criar, adicione os anúncios do SKU na aba Precificação, em “+ Anúncio”.</p>'}
   <div class="toolbar"><div class="grp"><button class="primary" id="epOk">Salvar</button><button onclick="fecharModal()">Cancelar</button></div>
-  ${id?`<div id="epDel" class="sim"><button class="danger" id="epDelBtn">Excluir</button></div>`:''}</div>`);
-  if(id)$('#epDelBtn').onclick=()=>{$('#epDel').innerHTML='<span>Excluir este produto?</span> <button class="danger" id="epDelSim">Sim, excluir</button>';$('#epDelSim').onclick=()=>excluirProduto(id);};
-  $('#epOk').onclick=()=>salvarProduto(id,p);
+  ${id?`<div id="epDel" class="sim"><button class="danger" id="epDelBtn">Excluir SKU</button></div>`:''}</div>`);
+  if(id)$('#epDelBtn').onclick=()=>{$('#epDel').innerHTML=`<span>Excluir o SKU e ${plural(anuncios(p).length,'anúncio')}?</span> <button class="danger" id="epDelSim">Sim, excluir</button>`;$('#epDelSim').onclick=()=>excluirProduto(id);};
+  $('#epOk').onclick=()=>{
+    const g=k=>$('#ep_'+k).value;const num=k=>{const v=parseN(g(k));return isFinite(v)?v:0;};
+    const sku=g('sku').trim();if(!sku){toast('Informe o SKU.');return;}
+    if(S.produtos.some(x=>x.sku===sku&&x.id!==id)){toast('Já existe um SKU com esse código.');return;}
+    const campos={sku,nome:g('nome').trim(),L:num('L'),C:num('C'),P:num('P'),peso:num('peso'),cmv:num('cmv'),embalagem:num('embalagem')};
+    fecharModal();
+    if(id){Object.assign(p,campos);render();gravar(pPath(id),()=>S.db.doc(pPath(id)).update(campos).then(()=>toast('SKU salvo.')));}
+    else{const nid=novoId('s');const doc={...campos,anuncios:{},ordem:Math.max(0,...S.produtos.map(x=>+x.ordem||0))+1};
+      gravar(pPath(nid),()=>S.db.doc(pPath(nid)).set(doc).then(()=>toast('SKU criado. Adicione os anúncios em Precificação.')));}
+  };
 }
-function salvarProduto(id,orig){
-  const g=k=>$('#ep_'+k).value;const num=k=>{const v=parseN(g(k));return isFinite(v)?v:0;};
-  const sku=g('sku').trim();if(!sku){toast('Informe o SKU.');return;}
-  const doc={...structuredClone(orig),sku,nome:g('nome').trim(),anuncioPremium:g('anuncioPremium').trim()||null,anuncioClassico:g('anuncioClassico').trim()||null,
-    L:num('L'),C:num('C'),P:num('P'),peso:num('peso'),cmv:num('cmv'),embalagem:num('embalagem'),overrides:{},precoAtual:{}};
-  delete doc.id;
-  const ckP=['ml_premium','ml_classico'].some(k=>parseN(g('pr_'+k))>0&&!g('pa2_'+k));if(ckP){toast('Informe a data final da promoção.');return;}
-  CANAIS.forEach(k=>{const pa=parseN(g('pa_'+k.id));doc.precoAtual[k.id]=isFinite(pa)&&pa>0?pa:null;
-    const o={};const co=parseN(g('co_'+k.id)),ad=parseN(g('ad_'+k.id)),de=parseN(g('de_'+k.id));
-    if(isFinite(co))o.comissao=co/100;if(isFinite(ad))o.ads=ad/100;if(isFinite(de)&&de)o.desconto=de;if(Object.keys(o).length)doc.overrides[k.id]=o;});
-  delete doc.tarifaML;doc.promoML={};
-  for(const k of ['ml_premium','ml_classico']){const r=parseN(g('pr_'+k)),ate=g('pa2_'+k);if(r>0){if(!ate){toast('Informe a data final da promoção.');return;}doc.promoML[k]={reducao:r,ate};}}
-  if(!Object.keys(doc.promoML).length)delete doc.promoML;
-  if(!id)doc.ordem=(Math.max(0,...S.produtos.map(p=>+p.ordem||0)))+1;
-  const ref=id?S.db.doc(`clientes/${S.cid}/produtos/${id}`):S.db.collection(`clientes/${S.cid}/produtos`).doc();
-  fecharModal();gravar(ref.path,()=>ref.set(doc).then(()=>toast('Produto salvo.')));
-}
-function excluirProduto(id){fecharModal();if(S.sel===id)S.sel=null;const path=`clientes/${S.cid}/produtos/${id}`;gravar(path,()=>S.db.doc(path).delete().then(()=>toast('Produto excluído.')));}
+function excluirProduto(id){fecharModal();for(const k of [...S.marcados])if(k.startsWith(id+'|'))S.marcados.delete(k);if(S.sel?.startsWith(id+'|'))S.sel=null;
+  gravar(pPath(id),()=>S.db.doc(pPath(id)).delete().then(()=>toast('SKU excluído.')));}
 
 /* ---------- Importar ---------- */
+const TIPOS={premium:'ml_premium','ml premium':'ml_premium',classico:'ml_classico','clássico':'ml_classico','ml classico':'ml_classico','ml clássico':'ml_classico',shopee:'shopee',tiktok:'tiktok','tiktok shop':'tiktok'};
 function importar(){
   modal(`<h2>Importar do Excel</h2>
+  <div class="field"><label class="label" for="imTipo">O que vai importar</label><select id="imTipo"><option value="sku">SKUs (dados do produto)</option><option value="anu">Anúncios (MLB de cada SKU)</option></select></div>
   <p class="note">Copie as linhas da planilha (sem o cabeçalho) e cole abaixo. As colunas devem estar nesta ordem:</p>
-  <div class="state num" style="font-size:12px">SKU · Nome · Largura · Comprimento · Altura · Peso (kg) · CMV · Embalagem · Preço atual Premium · Preço atual Clássico</div>
-  <p class="note">As duas últimas colunas são opcionais. Um SKU que já existe é atualizado, não duplicado.</p>
-  <textarea id="imTxt" rows="9" placeholder="B1.100	Fio Bicolor para som - 100m	25	25	7	1,7	51,52	0,65	133,74	102,71"></textarea>
+  <div class="state num" style="font-size:12px" id="imCols"></div>
+  <textarea id="imTxt" rows="9"></textarea>
   <div id="imPrev" class="note"></div>
   <div class="sim"><button class="primary" id="imOk" disabled>Importar</button><button onclick="fecharModal()">Cancelar</button></div>`);
+  const cols={sku:'SKU · Nome · Largura · Comprimento · Altura · Peso (kg) · CMV · Embalagem',anu:'SKU · MLB · Tipo (Premium, Clássico, Shopee ou TikTok) · Família · Preço de venda · Taxa % (opcional)'};
+  const ex={sku:'B1.100	Fio Bicolor para som - 100m	25	25	7	1,7	51,52	0,65',anu:'B1.100	MLB5483998348	Premium	8396304686571407	133,74	16,5'};
   let linhas=[];
-  $('#imTxt').addEventListener('input',()=>{linhas=$('#imTxt').value.split(/\r?\n/).map(l=>l.split('\t')).filter(c=>c.length>=7&&c[0].trim());
-    $('#imPrev').textContent=linhas.length?`${linhas.length} produtos prontos para importar. Primeiro: ${linhas[0][0]} · ${linhas[0][1]}`:'Nenhuma linha válida. Confira se copiou ao menos 8 colunas do Excel.';$('#imOk').disabled=!linhas.length;});
+  const prev=()=>{const tp=$('#imTipo').value;const min=tp==='sku'?8:3;linhas=$('#imTxt').value.split(/\r?\n/).map(l=>l.split('\t')).filter(c=>c.length>=min&&c[0].trim());
+    $('#imPrev').textContent=linhas.length?`${linhas.length} linhas prontas. Primeira: ${linhas[0].slice(0,3).join(' · ')}`:'Nenhuma linha válida ainda. Confira se copiou as colunas do Excel.';$('#imOk').disabled=!linhas.length;};
+  const tipo=()=>{const tp=$('#imTipo').value;$('#imCols').textContent=cols[tp];$('#imTxt').placeholder=ex[tp];prev();};
+  $('#imTipo').onchange=tipo;$('#imTxt').addEventListener('input',prev);tipo();
   $('#imOk').onclick=async()=>{
-    const N=v=>{const x=parseN(v);return isFinite(x)?x:0;};const bySku=Object.fromEntries(S.produtos.map(p=>[p.sku,p]));
-    let ordem=Math.max(0,...S.produtos.map(p=>+p.ordem||0));$('#imOk').disabled=true;let ok=0;
-    for(const c of linhas){const sku=c[0].trim();const ex=bySku[sku];
-      const doc={...(ex?structuredClone(ex):{overrides:{},precoAtual:{},ordem:++ordem}),sku,nome:(c[1]||'').trim(),L:N(c[2]),C:N(c[3]),P:N(c[4]),peso:N(c[5]),cmv:N(c[6]),embalagem:N(c[7])};
-      delete doc.id;doc.precoAtual={...(doc.precoAtual||{})};if(c[8]&&N(c[8]))doc.precoAtual.ml_premium=N(c[8]);if(c[9]&&N(c[9]))doc.precoAtual.ml_classico=N(c[9]);
-      const ref=ex?S.db.doc(`clientes/${S.cid}/produtos/${ex.id}`):S.db.collection(`clientes/${S.cid}/produtos`).doc();
-      try{await ref.set(doc);ok++;$('#imPrev').textContent=`Importando… ${ok}/${linhas.length}`;}catch(e){toast(e?.code==='quota_exceeded'?'Limite de armazenamento atingido.':'Falha ao importar '+sku);break;}}
-    fecharModal();toast(`${ok} produtos importados.`);};
+    const N=v=>{const x=parseN(v);return isFinite(x)?x:0;};const tp=$('#imTipo').value;$('#imOk').disabled=true;
+    const bySku=Object.fromEntries(S.produtos.map(p=>[p.sku,p]));let ordem=Math.max(0,...S.produtos.map(p=>+p.ordem||0));let ok=0,falta=[],ruim=0;
+    try{
+      if(tp==='sku'){for(const c of linhas){const sku=c[0].trim();const ex=bySku[sku];
+        const campos={sku,nome:(c[1]||'').trim(),L:N(c[2]),C:N(c[3]),P:N(c[4]),peso:N(c[5]),cmv:N(c[6]),embalagem:N(c[7])};
+        if(ex)await S.db.doc(pPath(ex.id)).update(campos);else{const nid=novoId('s');await S.db.doc(pPath(nid)).set({...campos,anuncios:{},ordem:++ordem});}
+        ok++;$('#imPrev').textContent=`Importando… ${ok}/${linhas.length}`;}}
+      else{const porP={};
+        for(const c of linhas){const sku=c[0].trim();const p=bySku[sku];if(!p){falta.push(sku);continue;}
+          const canal=TIPOS[(c[2]||'').trim().toLowerCase()];if(!canal){ruim++;continue;}
+          const mlb=(c[1]||'').trim().toUpperCase().replace(/\s/g,'')||null;const pt={canal,mlb};
+          if(c[3]&&c[3].trim())pt.familia=c[3].trim();const pv=N(c[4]);if(pv>0)pt.preco=pv;const tx=parseN(c[5]);if(isFinite(tx)&&tx<100)pt.taxa=tx/100;
+          const acc=porP[p.id]=porP[p.id]||{};const atual=[...anuncios(p),...Object.entries(acc).map(([id,a])=>({id,...a}))];
+          const ex=atual.find(a=>a.canal===canal&&mlb&&a.mlb===mlb);
+          if(ex)acc[ex.id]={...(acc[ex.id]||{}),...pt};else acc[novoId('a')]={...pt,ordem:Math.max(0,...atual.map(a=>+a.ordem||0))+1};ok++;}
+        for(const pid in porP)await S.db.doc(pPath(pid)).update({anuncios:porP[pid]});}
+    }catch(e){toast(e?.code==='quota_exceeded'?'Limite de armazenamento atingido.':'A importação parou no meio. Confira e tente de novo.');}
+    fecharModal();toast(`${ok} ${tp==='sku'?'SKUs':'anúncios'} importados.`+(falta.length?` ${falta.length} sem SKU cadastrado (${[...new Set(falta)].slice(0,3).join(', ')}).`:'')+(ruim?` ${ruim} com tipo não reconhecido.`:''));};
 }
 
 /* ---------- Exportar ---------- */
 async function exportar(){
-  const c=cli();const ativos=canaisAtivos(c);const m=+c.margem||0;
-  const linhas=filtrados().map(p=>{const r={SKU:p.sku,Produto:p.nome,'Anúncio Premium':p.anuncioPremium||'','Anúncio Clássico':p.anuncioClassico||'','Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),CMV:+p.cmv,Embalagem:+p.embalagem,'Taxa ML Premium':cfgEfetiva(c,'ml_premium',p).comissao,'Taxa ML Clássico':cfgEfetiva(c,'ml_classico',p).comissao,'Promoção ML':['ml_premium','ml_classico'].map(k=>{const pr=promoAtiva(p,k,hojeISO());return pr?`${k==='ml_premium'?'Premium':'Clássico'} −${n2(pr.reducao)} até ${dataBRc(pr.ate)}`:'';}).filter(Boolean).join(' · ')};
-    ativos.forEach(k=>{const s=precoSugerido(c,k.id,p,S.frete,m);const at=p.precoAtual?.[k.id];const d=at?dre(c,k.id,p,S.frete,at):null;
-      r[`${k.nome} · sugerido`]=s==null?'':+s.toFixed(2);r[`${k.nome} · atual`]=at||'';r[`${k.nome} · margem atual`]=d?+d.margem.toFixed(4):'';});return r;});
-  const nome=`Precificação ${c.nome} - margem ${pctIn(m)}%`;
-  let data,fn;
+  const c=cli();const m=+c.margem||0;const linhas=[];
+  filtro().forEach(({p,as})=>as.forEach(a=>{const {sug,d,e}=calc(c,p,a,m);const pr=a.promo||{};
+    linhas.push({SKU:p.sku,Produto:p.nome,'Anúncio':a.mlb||'',Família:a.familia||'',Canal:nomeCanal(a.canal),CMV:+p.cmv,Embalagem:+p.embalagem,'Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),
+      'Taxa %':e.comissao??'','Redução R$':+pr.reducao>0?+pr.reducao:'','Válida até':pr.ate?dataBRc(pr.ate):'','ADS %':e.ads,
+      'Preço sugerido':sug==null?'':+sug.toFixed(2),'Preço de venda':+a.preco>0?+a.preco:'','Margem atual':d?+d.margem.toFixed(4):''});}));
+  const nome=`Precificação ${c.nome} - margem ${pctIn(m)}%`;let data,fn;
   if(window.XLSX){const ws=XLSX.utils.json_to_sheet(linhas);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Preços');data=XLSX.write(wb,{bookType:'xlsx',type:'array'});fn=nome+'.xlsx';}
   else{const cols=Object.keys(linhas[0]||{});data=[cols.join(';'),...linhas.map(r=>cols.map(k=>String(r[k]).replace(/;/g,',')).join(';'))].join('\n');fn=nome+'.csv';}
   const dl=await claude.use('downloads');if(!dl){toast('Download indisponível nesta visualização.');return;}
@@ -563,8 +597,8 @@ addEventListener('hashchange',rota);
 function assinarProdutos(){
   if(S.unsubProd)S.unsubProd();S.produtos=[];S.loaded.prod=false;if(!S.cid||!S.db)return;
   S.unsubProd=S.db.collection(`clientes/${S.cid}/produtos`).onSnapshot(snap=>{
-    S.produtos=snap.docs.map(d=>({id:d.id,...structuredClone(d.data())})).sort((a,b)=>(+a.ordem||0)-(+b.ordem||0)||String(a.sku).localeCompare(String(b.sku)));
-    S.loaded.prod=true;render();},e=>{S.erro='Não foi possível carregar os produtos. Recarregue a página.';render();});
+    S.produtos=snap.docs.map(d=>({id:d.id,...structuredClone(d.data())})).filter(p=>p.anuncios!==undefined).sort((a,b)=>(+a.ordem||0)-(+b.ordem||0)||String(a.sku).localeCompare(String(b.sku)));
+    S.loaded.prod=true;render();},()=>{S.erro='Não foi possível carregar os produtos. Recarregue a página.';render();});
 }
 (async()=>{
   try{S.cid=localStorage.getItem('prec_cli');}catch{}
@@ -581,6 +615,6 @@ function assinarProdutos(){
     if(!S.clientes.find(c=>c.id===S.cid)){S.cid=S.clientes[0]?.id||null;assinarProdutos();}
     else if(first)assinarProdutos();
     render();
-  },e=>{clearTimeout(timer);S.erro='Não foi possível carregar os clientes.';render();});
+  },()=>{clearTimeout(timer);S.erro='Não foi possível carregar os clientes.';render();});
 })();
 </script>
