@@ -174,7 +174,7 @@ function pesoCobrado(p){const cub=(+p.L||0)*(+p.C||0)*(+p.P||0)/6000;return Math
 function idxPeso(frete,kg){let i=0;frete.linhas.forEach((l,k)=>{if(kg>=l.ini)i=k;});return i;}
 function hojeISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function grupoML(cli,prod){const gs=cli.tarifasML||[];return gs.find(g=>g.id===prod.tarifaML)||gs[0]||null;}
-function promoAtiva(prod,canal,hoje){const pr=(prod.promoML||{})[canal];if(!pr||!(+pr.reducao>0))return null;if(pr.ate&&pr.ate<hoje)return null;return pr;}
+function promoAtiva(prod,canal,hoje){const pr=(prod.promoML||{})[canal];if(!pr||!(+pr.reducao>0))return null;return pr;}
 function cfgEfetiva(cli,canal,prod,opt={}){
   const c=cli.canais[canal]||{};const ov=(prod.overrides||{})[canal]||{};
   let com=ov.comissao;
@@ -294,8 +294,8 @@ function viewPrecos(c){
     const pid=esc(p.id);const aberto=busca||!S.fechados.has(p.id);
     const keys=as.map(a=>p.id+'|'+a.id);const todos=keys.length>0&&keys.every(k=>S.marcados.has(k));
     if(aberto)visKeys.push(...keys);
-    const promoAtivas=as.filter(a=>a.promo&&+a.promo.reducao>0&&(!a.promo.ate||a.promo.ate>=hoje)).length;
-    const grp=`<tr class="grp-row"><td colspan="12"><div class="grp-in">
+    const promoAtivas=as.filter(a=>a.promo&&+a.promo.reducao>0).length;
+    const grp=`<tr class="grp-row"><td colspan="11"><div class="grp-in">
       <input type="checkbox" id="gck_${pid}" data-gck="${pid}" ${todos?'checked':''} aria-label="Selecionar anúncios de ${esc(p.sku)}">
       <button class="tog" data-tog="${pid}" aria-expanded="${aberto}" aria-label="${aberto?'Recolher':'Expandir'} ${esc(p.sku)}">${aberto?'▾':'▸'}</button>
       <span class="sku">${esc(p.sku)}</span><span class="gnome" title="${esc(p.nome)}">${esc(p.nome)}</span>
@@ -307,15 +307,15 @@ function viewPrecos(c){
       <button class="link" onclick="novoAnuncio('${pid}')">+ Anúncio</button><button class="link" onclick="editarProduto('${pid}')">Editar SKU</button>
     </div></td></tr>`;
     if(!aberto)return grp;
-    if(!as.length)return grp+`<tr class="anu-vazio"><td></td><td colspan="11" class="muted">Nenhum anúncio neste SKU. Clique em “+ Anúncio”.</td></tr>`;
+    if(!as.length)return grp+`<tr class="anu-vazio"><td></td><td colspan="10" class="muted">Nenhum anúncio neste SKU. Clique em “+ Anúncio”.</td></tr>`;
     return grp+as.map(a=>linhaAnuncio(c,p,a,m,hoje,ativosIds)).join('');
   }).join('');
   const allSel=visKeys.length>0&&visKeys.every(k=>S.marcados.has(k));
   const table=`<div class="panel scroll" id="tblScroll"><table class="anu"><thead><tr>
     <th class="ck"><input type="checkbox" id="ckAll" aria-label="Selecionar todos os anúncios visíveis" ${allSel?'checked':''}></th>
-    <th class="mlbc">Anúncio ✎</th><th>Família ✎</th><th>Canal ✎</th><th class="r">Taxa % ✎</th><th class="r">Redução R$ ✎</th><th>Válida até ✎</th><th class="r">ADS % ✎</th>
+    <th class="mlbc">Anúncio ✎</th><th>Família ✎</th><th>Canal ✎</th><th class="r">Taxa % ✎</th><th class="r">Redução R$ ✎</th><th class="r">ADS % ✎</th>
     <th class="r">Sugerido</th><th class="r">Preço de venda ✎</th><th class="r">Margem atual</th><th></th></tr></thead>
-    <tbody>${body||`<tr><td colspan="12" class="muted">Nada encontrado para “${esc(S.busca)}”. A busca procura em SKU, nome, anúncio (MLB), família e canal.</td></tr>`}</tbody></table></div>`;
+    <tbody>${body||`<tr><td colspan="11" class="muted">Nada encontrado para “${esc(S.busca)}”. A busca procura em SKU, nome, anúncio (MLB), família e canal.</td></tr>`}</tbody></table></div>`;
   const tools=`<div class="toolbar"><div class="grp"><input id="inBusca" type="search" placeholder="Buscar SKU, nome, MLB ou família" value="${esc(S.busca)}" style="width:290px">
       <button class="link" onclick="S.fechados.clear();render()">Expandir todos</button><button class="link" onclick="S.produtos.forEach(p=>S.fechados.add(p.id));render()">Recolher todos</button></div>
     <div class="grp"><button type="button" onclick="exportar()">Exportar Excel</button></div></div>`;
@@ -328,7 +328,7 @@ function viewPrecos(c){
 function linhaAnuncio(c,p,a,m,hoje,ativosIds){
   const def=CANAIS.find(x=>x.id===a.canal)||CANAIS[0];const {vp,sug,d,e}=calc(c,p,a,m);
   const key=p.id+'|'+a.id;const fid=f=>`f_${esc(p.id)}_${esc(a.id)}_${f}`;const da=f=>`data-af="${esc(key)}|${f}"`;
-  const pr=a.promo||{};const temP=+pr.reducao>0;const exp=temP&&pr.ate&&pr.ate<hoje;const ativa=promoAtiva(vp,a.canal,hoje);
+  const pr=a.promo||{};const temP=+pr.reducao>0;const ativa=promoAtiva(vp,a.canal,hoje);
   const opts=CANAIS.filter(x=>ativosIds.includes(x.id)||x.id===a.canal).map(x=>`<option value="${x.id}"${x.id===a.canal?' selected':''}>${esc(x.nome)}</option>`).join('');
   return `<tr data-row="${esc(key)}" class="${S.sel===key?'sel':''}">
     <td class="ck"><input type="checkbox" id="${fid('ck')}" data-ck="${esc(key)}" ${S.marcados.has(key)?'checked':''} aria-label="Selecionar anúncio ${esc(a.mlb||'')}"></td>
@@ -336,10 +336,9 @@ function linhaAnuncio(c,p,a,m,hoje,ativosIds){
     <td><input class="cell txt fam" id="${fid('familia')}" ${da('familia')} value="${esc(a.familia||'')}" placeholder="—" aria-label="Família"></td>
     <td><select class="cell-sel" id="${fid('canal')}" ${da('canal')} aria-label="Canal">${opts}</select></td>
     <td class="r"><input class="n cell" style="width:60px" id="${fid('taxa')}" ${da('taxa')} inputmode="decimal" value="${def.tipo==='ml'?pctIn(e.comissao):(a.taxa!=null?pctIn(a.taxa):'')}" placeholder="${def.tipo==='ml'?'':'faixa'}" aria-label="Taxa %"></td>
-    <td class="r"><input class="n cell${exp?' exp':''}" style="width:66px" id="${fid('reducao')}" ${da('reducao')} inputmode="decimal" value="${temP?n2(pr.reducao):''}" placeholder="—" title="${exp?'Promoção expirada':''}" aria-label="Redução da taxa em R$"></td>
-    <td><input type="date" class="cell date${exp?' exp':''}" id="${fid('ate')}" ${da('ate')} value="${esc(pr.ate||'')}" aria-label="Promoção válida até"></td>
+    <td class="r"><input class="n cell" style="width:66px" id="${fid('reducao')}" ${da('reducao')} inputmode="decimal" value="${temP?n2(pr.reducao):''}" placeholder="—" aria-label="Redução da taxa em R$"></td>
     <td class="r"><input class="n cell" style="width:50px" id="${fid('ads')}" ${da('ads')} inputmode="decimal" value="${pctIn(e.ads)}" aria-label="ADS %"></td>
-    <td class="r num sug">${sug==null?'<span class="chip bad">inviável</span>':brl(sug)}${ativa?`<span class="chip promo" title="Com redução de ${brl(+ativa.reducao)} até ${dataBRc(ativa.ate)}">promo até ${dataBR(ativa.ate)}</span>`:''}</td>
+    <td class="r num sug">${sug==null?'<span class="chip bad">inviável</span>':brl(sug)}${ativa?`<span class="chip promo" title="Com redução de ${brl(+ativa.reducao)} na taxa">promo</span>`:''}</td>
     <td class="r"><input class="n cell" id="${fid('preco')}" ${da('preco')} inputmode="decimal" value="${+a.preco>0?n2(a.preco):''}" placeholder="—" aria-label="Preço de venda"></td>
     <td class="r">${d?chipMargem(d.margem,m):'<span class="muted">—</span>'}</td>
     <td class="r">${S.pendente==='rm:'+key?`<button class="link danger-t" onclick="removerAnuncio('${esc(p.id)}','${esc(a.id)}')">confirmar</button> <button class="link" onclick="S.pendente=null;render()">não</button>`:`<button class="link muted-btn" onclick="S.pendente='rm:${esc(key)}';render()" aria-label="Remover anúncio">remover</button>`}</td></tr>`;
@@ -353,7 +352,7 @@ function viewDetalhe(c,p,a){
     <div class="detail-head"><div><div class="sku">${esc(p.sku)}</div><div class="muted" style="white-space:normal">${esc(p.nome)}</div>
       <div class="note"><b class="num">${esc(a.mlb||'sem código')}</b> · ${esc(nomeCanal(k))}${a.familia?` · família <span class="num">${esc(a.familia)}</span>`:''}</div></div>
       <button class="link" onclick="S.sel=null;render()">Fechar</button></div>
-    ${pr?`<div class="promo-cmp"><span>Sugerido <b>com</b> promoção (−${brl(+pr.reducao)} até ${dataBRc(pr.ate)}) <b class="num">${brl(sug)}</b></span><span>Sugerido <b>sem</b> promoção <b class="num">${brl(sugSem)}</b></span></div>`:''}
+    ${pr?`<div class="promo-cmp"><span>Sugerido <b>com</b> promoção (−${brl(+pr.reducao)}) <b class="num">${brl(sug)}</b></span><span>Sugerido <b>sem</b> promoção <b class="num">${brl(sugSem)}</b></span></div>`:''}
     <div class="sim"><label class="label" for="inSim">Simular preço</label><input id="inSim" class="n" inputmode="decimal" placeholder="${n2(sug)}" value="${esc(S.sim)}">${S.sim?`<button class="link" onclick="S.sim='';render()">usar sugerido</button>`:''}</div>
     ${d?`<div class="dre">
       <div><span><b>Preço de venda</b>${isFinite(simV)&&simV>0?'':' <span class="tag">sugerido</span>'}</span><span><b>${brl(d.preco)}</b></span></div>
@@ -436,8 +435,7 @@ document.addEventListener('change',e=>{
     else{const v=parseN(txt);if(txt&&!(isFinite(v)&&v>=0)){toast('Valor inválido.');render();return;}
       if(f==='taxa'||f==='ads'){if(txt&&v>=100){toast('Use percentual. Ex.: 16,5');render();return;}val=txt?v/100:null;}else val=txt?v:null;}
     let patch;
-    if(f==='reducao'||f==='ate'){const pr={...(a.promo||{})};if(f==='reducao')pr.reducao=val||0;else pr.ate=val;a.promo=pr;patch={promo:pr};
-      if(f==='reducao'&&val>0&&!pr.ate)toast('Informe a data final em “Válida até”.');}
+    if(f==='reducao'){const pr={reducao:val||0};a.promo=pr;patch={promo:pr};}
     else{a[f]=val;patch={[f]:val};if(f==='canal'){a.taxa=null;a.ads=null;patch.taxa=null;patch.ads=null;}}
     render();salvarAnuncio(pid,aid,patch);return;}
   if(t.dataset.ativo){upCliente({canais:{[t.dataset.ativo]:{ativo:t.checked}}});return;}
@@ -474,15 +472,14 @@ function aplicarLote(fn){const porP={};
   let n=0;for(const pid in porP){n+=Object.keys(porP[pid]).length;const up={anuncios:porP[pid]};gravar(pPath(pid),()=>S.db.doc(pPath(pid)).update(up));}
   render();return n;}
 const plural=(n,s)=>`${n} ${s}${n===1?'':'s'}`;
-function promoLote(){const fim=new Date();fim.setDate(fim.getDate()+14);const dflt=fim.toISOString().slice(0,10);const c=cli();const ativos=canaisAtivos(c);
+function promoLote(){const c=cli();const ativos=canaisAtivos(c);
   modal(`<h2>Aplicar promoção</h2><p class="note">Vale para os ${S.marcados.size} anúncios selecionados. Informe a redução da taxa em reais, como o marketplace mostra. Deixe em branco o canal que não entra.</p>
-  <div class="form-grid">${ativos.map(k=>`<div class="field"><label class="label" for="pl_${k.id}">Redução ${esc(k.nome)} (R$)</label><input id="pl_${k.id}" class="num" inputmode="decimal" placeholder="ex.: 5,68"></div>`).join('')}
-  <div class="field"><label class="label" for="plAte">Válida até</label><input id="plAte" type="date" value="${dflt}"></div></div>
-  <p class="note">No dia seguinte à data final, o cálculo volta sozinho para a taxa normal.</p>
+  <div class="form-grid">${ativos.map(k=>`<div class="field"><label class="label" for="pl_${k.id}">Redução ${esc(k.nome)} (R$)</label><input id="pl_${k.id}" class="num" inputmode="decimal" placeholder="ex.: 5,68"></div>`).join('')}</div>
+  <p class="note">A redução vale até você apagar o valor na tabela ou usar “Remover promoção”.</p>
   <div class="sim"><button class="primary" id="plOk">Aplicar</button><button onclick="fecharModal()">Cancelar</button></div>`);
-  $('#plOk').onclick=()=>{const ate=$('#plAte').value;const red={};ativos.forEach(k=>{const v=parseN($('#pl_'+k.id).value);if(v>0)red[k.id]=v;});
-    if(!ate){toast('Informe a data final da promoção.');return;}if(!Object.keys(red).length){toast('Informe a redução de ao menos um canal.');return;}
-    const n=aplicarLote(a=>red[a.canal]?{promo:{reducao:red[a.canal],ate}}:null);fecharModal();toast(`Promoção aplicada em ${plural(n,'anúncio')}.`);};}
+  $('#plOk').onclick=()=>{const red={};ativos.forEach(k=>{const v=parseN($('#pl_'+k.id).value);if(v>0)red[k.id]=v;});
+    if(!Object.keys(red).length){toast('Informe a redução de ao menos um canal.');return;}
+    const n=aplicarLote(a=>red[a.canal]?{promo:{reducao:red[a.canal]}}:null);fecharModal();toast(`Promoção aplicada em ${plural(n,'anúncio')}.`);};}
 function removerPromoLote(){const n=aplicarLote(a=>a.promo&&+a.promo.reducao>0?{promo:null}:null);toast(n?`Promoção removida de ${plural(n,'anúncio')}.`:'Nenhum dos selecionados tinha promoção.');}
 function taxaLote(){const c=cli();const ativos=canaisAtivos(c);
   modal(`<h2>Alterar taxa / ADS</h2><p class="note">Vale para os ${S.marcados.size} anúncios selecionados, conforme o canal de cada um. Deixe em branco o que não muda.</p>
@@ -582,7 +579,7 @@ async function exportar(){
   const c=cli();const m=+c.margem||0;const linhas=[];
   filtro().forEach(({p,as})=>as.forEach(a=>{const {sug,d,e}=calc(c,p,a,m);const pr=a.promo||{};
     linhas.push({SKU:p.sku,Produto:p.nome,'Anúncio':a.mlb||'',Família:a.familia||'',Canal:nomeCanal(a.canal),CMV:+p.cmv,Embalagem:+p.embalagem,'Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),
-      'Taxa %':e.comissao??'','Redução R$':+pr.reducao>0?+pr.reducao:'','Válida até':pr.ate?dataBRc(pr.ate):'','ADS %':e.ads,
+      'Taxa %':e.comissao??'','Redução R$':+pr.reducao>0?+pr.reducao:'','ADS %':e.ads,
       'Preço sugerido':sug==null?'':+sug.toFixed(2),'Preço de venda':+a.preco>0?+a.preco:'','Margem atual':d?+d.margem.toFixed(4):''});}));
   const nome=`Precificação ${c.nome} - margem ${pctIn(m)}%`;let data,fn;
   if(window.XLSX){const ws=XLSX.utils.json_to_sheet(linhas);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Preços');data=XLSX.write(wb,{bookType:'xlsx',type:'array'});fn=nome+'.xlsx';}
