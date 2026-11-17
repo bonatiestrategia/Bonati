@@ -247,13 +247,17 @@ function upCliente(patch){const c=cli();if(!c||!S.db)return;Object.assign(c,stru
   return gravar('clientes/'+c.id,()=>S.db.doc('clientes/'+c.id).update(patch));}
 const deb={};function debounce(k,ms,fn){clearTimeout(deb[k]);deb[k]=setTimeout(fn,ms);}
 const pPath=pid=>`clientes/${S.cid}/produtos/${pid}`;
+const ROT={sku:'SKU',familia:'Família',mlb:'MLB ou Família'};
+function freteCli(c){return (c&&c.frete)||S.frete;}
+function R(){return ROT[cli()?.agrupar]||'SKU';}
+function Rs(){return R()==='SKU'?'SKUs':'produtos';}
 const novoId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
 /* ---------- Anúncios: cada SKU tem um conjunto de anúncios (MLB, Shopee, TikTok) ---------- */
 function anuncios(p){return Object.entries(p.anuncios||{}).filter(([,a])=>a).map(([id,a])=>({id,...a})).sort((x,y)=>(+x.ordem||0)-(+y.ordem||0));}
 function vprod(p,a,c){const ov={};if(a.taxa!=null)ov.comissao=+a.taxa;if(a.ads!=null)ov.ads=+a.ads;if(+a.desc)ov.desconto=+a.desc;
   return {...p,embalagem:c&&c.embalagem!=null?+c.embalagem:+p.embalagem||0,overrides:{[a.canal]:ov},promoML:a.promo&&+a.promo.reducao>0?{[a.canal]:a.promo}:{}};}
-function calc(c,p,a,m,opt){const vp=vprod(p,a,c);return {vp,sug:precoSugerido(c,a.canal,vp,S.frete,m,opt),d:+a.preco>0?dre(c,a.canal,vp,S.frete,+a.preco):null,e:cfgEfetiva(c,a.canal,vp)};}
+function calc(c,p,a,m,opt){const vp=vprod(p,a,c);return {vp,sug:precoSugerido(c,a.canal,vp,freteCli(c),m,opt),d:+a.preco>0?dre(c,a.canal,vp,freteCli(c),+a.preco):null,e:cfgEfetiva(c,a.canal,vp)};}
 function salvarAnuncio(pid,aid,patch){gravar(pPath(pid),()=>S.db.doc(pPath(pid)).update({anuncios:{[aid]:patch}}));}
 function filtro(){const q=S.busca.trim().toLowerCase();
   return S.produtos.map(p=>{const as=anuncios(p);if(!q)return {p,as};
@@ -282,11 +286,11 @@ function render(){
 
 function viewPrecos(c){
   const m=+c.margem||0;
-  const head=`<div class="toolbar"><div><h1>Precificação · ${esc(c.nome)}</h1><p class="sub">Cada SKU com seus anúncios. Preço sugerido para atingir a margem líquida desejada.</p></div>
+  const head=`<div class="toolbar"><div><h1>Precificação · ${esc(c.nome)}</h1><p class="sub">Cada ${R()} com seus anúncios. Preço sugerido para atingir a margem líquida desejada.</p></div>
     <div class="grp"><div class="margem-box"><label class="label" for="inMargem">Margem líquida<br>desejada</label><input id="inMargem" inputmode="decimal" value="${pctIn(m)}"><span class="num">%</span></div></div></div>`;
   if(!S.loaded.prod)return head+`<div class="state">Carregando produtos…</div>`;
   if(!S.produtos.length)return head+`<div class="panel empty"><h2>Nenhum produto ainda</h2><p>Cadastre produtos ou importe da sua planilha na aba Produtos.</p><a class="btn" href="#produtos">Ir para Produtos</a></div>`;
-  if(!S.frete)return head+`<div class="state">Carregando tabela de frete do Mercado Livre…</div>`;
+  if(!freteCli(c))return head+`<div class="state">Carregando tabela de frete do Mercado Livre…</div>`;
   const lista=filtro();const hoje=hojeISO();const ativosIds=canaisAtivos(c).map(k=>k.id);const busca=!!S.busca.trim();
   let nA=0,abaixo=0,inv=0,visKeys=[];
   lista.forEach(({p,as})=>as.forEach(a=>{nA++;const r=calc(c,p,a,m);if(r.sug==null)inv++;if(r.d&&r.d.margem<m-0.0005)abaixo++;}));
@@ -298,15 +302,15 @@ function viewPrecos(c){
     const grp=`<tr class="grp-row"><td colspan="11"><div class="grp-in">
       <input type="checkbox" id="gck_${pid}" data-gck="${pid}" ${todos?'checked':''} aria-label="Selecionar anúncios de ${esc(p.sku)}">
       <button class="tog" data-tog="${pid}" aria-expanded="${aberto}" aria-label="${aberto?'Recolher':'Expandir'} ${esc(p.sku)}">${aberto?'▾':'▸'}</button>
-      <span class="sku">${esc(p.sku)}</span><span class="gnome" title="${esc(p.nome)}">${esc(p.nome)}</span>
+      ${R()!=='SKU'?`<span class="muted" style="font-size:11px">${R()}</span>`:''}<span class="sku">${esc(p.sku)}</span><span class="gnome" title="${esc(p.nome)}">${esc(p.nome)}</span>
       <label class="gf">CMV R$ <input class="n cell" id="pf_${pid}_cmv" data-pf="${pid}|cmv" inputmode="decimal" value="${n2(+p.cmv)}"></label>
       <span class="gf muted">Peso cobrado <b class="num">${n2(pesoCobrado(p))} kg</b></span>
       <span class="gf muted">${total?`${as.length} de ${total} anúncios`:`${as.length} anúncio${as.length===1?'':'s'}`}</span>
       ${promoAtivas?`<span class="chip promo">${promoAtivas} em promoção</span>`:''}
-      <button class="link" onclick="novoAnuncio('${pid}')">+ Anúncio</button><button class="link" onclick="editarProduto('${pid}')">Editar SKU</button>
+      <button class="link" onclick="novoAnuncio('${pid}')">+ Anúncio</button><button class="link" onclick="editarProduto('${pid}')">Editar ${R()}</button>
     </div></td></tr>`;
     if(!aberto)return grp;
-    if(!as.length)return grp+`<tr class="anu-vazio"><td></td><td colspan="10" class="muted">Nenhum anúncio neste SKU. Clique em “+ Anúncio”.</td></tr>`;
+    if(!as.length)return grp+`<tr class="anu-vazio"><td></td><td colspan="10" class="muted">Nenhum anúncio neste ${R()}. Clique em “+ Anúncio”.</td></tr>`;
     return grp+as.map(a=>linhaAnuncio(c,p,a,m,hoje,ativosIds)).join('');
   }).join('');
   const allSel=visKeys.length>0&&visKeys.every(k=>S.marcados.has(k));
@@ -318,7 +322,7 @@ function viewPrecos(c){
   const tools=`<div class="toolbar"><div class="grp"><input id="inBusca" type="search" placeholder="Buscar SKU, nome, MLB ou família" value="${esc(S.busca)}" style="width:290px">
       <button class="link" onclick="S.fechados.clear();render()">Expandir todos</button><button class="link" onclick="S.produtos.forEach(p=>S.fechados.add(p.id));render()">Recolher todos</button></div>
     <div class="grp"><button type="button" onclick="exportar()">Exportar Excel</button></div></div>`;
-  const sum=`<div class="summary"><span><b>${lista.length}</b> SKUs · <b>${nA}</b> anúncios</span><span><b>${abaixo}</b> preços abaixo da meta</span>${inv?`<span><b>${inv}</b> sem preço possível</span>`:''}<span>✎ editável direto na tabela</span></div>`;
+  const sum=`<div class="summary"><span><b>${lista.length}</b> ${Rs()} · <b>${nA}</b> anúncios</span><span><b>${abaixo}</b> preços abaixo da meta</span>${inv?`<span><b>${inv}</b> sem preço possível</span>`:''}<span>✎ editável direto na tabela</span></div>`;
   const nSel=S.marcados.size;
   const bulk=nSel?`<div class="bulk"><b>${nSel} anúncio${nSel>1?'s':''} selecionado${nSel>1?'s':''}</b><button class="primary" onclick="promoLote()">Aplicar promoção</button><button onclick="removerPromoLote()">Remover promoção</button><button onclick="taxaLote()">Alterar taxa / ADS</button><button class="link" onclick="S.marcados.clear();render()">Limpar seleção</button></div>`:'';
   let det='';if(S.sel){const [pid,aid]=S.sel.split('|');const p=S.produtos.find(x=>x.id===pid);const a=p?.anuncios?.[aid];if(a)det=viewDetalhe(c,p,{id:aid,...a});else S.sel=null;}
@@ -344,8 +348,8 @@ function linhaAnuncio(c,p,a,m,hoje,ativosIds){
 }
 function viewDetalhe(c,p,a){
   const m=+c.margem||0;const k=a.canal;const {vp,sug}=calc(c,p,a,m);const simV=parseN(S.sim);
-  const P=isFinite(simV)&&simV>0?simV:sug;const d=P?dre(c,k,vp,S.frete,P):null;
-  const pr=promoAtiva(vp,k,hojeISO());const sugSem=pr?precoSugerido(c,k,vp,S.frete,m,{semPromo:true}):null;
+  const P=isFinite(simV)&&simV>0?simV:sug;const d=P?dre(c,k,vp,freteCli(c),P):null;
+  const pr=promoAtiva(vp,k,hojeISO());const sugSem=pr?precoSugerido(c,k,vp,freteCli(c),m,{semPromo:true}):null;
   const linha=(t,v)=>`<div><span>${t}</span><span>− ${brl(v)}</span></div>`;
   return `<aside class="panel detail" aria-label="Detalhe do anúncio">
     <div class="detail-head"><div><div class="sku">${esc(p.sku)}</div><div class="muted" style="white-space:normal">${esc(p.nome)}</div>
@@ -370,16 +374,16 @@ function viewProdutos(c){
     return `<tr data-edit="${esc(p.id)}"><td class="sku">${esc(p.sku)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
     <td class="r num">${[p.L,p.C,p.P].map(v=>n2(+v||0).replace(',00','')).join('×')}</td><td class="r num">${n2(+p.peso)}</td><td class="r num">${brl(+p.cmv)}</td>
     <td class="r num">${as.length}</td><td class="num muted fams" title="${esc(fams.join(', '))}">${esc(fams.join(', '))}</td></tr>`;}).join('');
-  return `<div class="toolbar"><div><h1>Produtos · ${esc(c.nome)}</h1><p class="sub">${S.produtos.length} SKUs. Clique numa linha para editar os dados do SKU. Os anúncios de cada SKU ficam na aba Precificação.</p></div>
-    <div class="grp"><button onclick="importar()">Importar do Excel</button><button class="primary" onclick="editarProduto(null)">+ Novo SKU</button></div></div>
+  return `<div class="toolbar"><div><h1>Produtos · ${esc(c.nome)}</h1><p class="sub">${S.produtos.length} ${Rs()}. Clique numa linha para editar os dados do produto. Os anúncios de cada ${R()} ficam na aba Precificação.</p></div>
+    <div class="grp"><button onclick="importar()">Importar do Excel</button><button class="primary" onclick="editarProduto(null)">+ Novo ${R()}</button></div></div>
     <div class="toolbar"><input id="inBusca" type="search" placeholder="Buscar SKU, nome, MLB ou família" value="${esc(S.busca)}" style="width:290px"></div>
-    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>SKU</th><th>Produto</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Anúncios</th><th>Famílias</th></tr></thead><tbody>${rows||`<tr><td colspan="8" class="muted">Nada encontrado.</td></tr>`}</tbody></table></div>`
+    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>${R()}</th><th>Produto</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Anúncios</th><th>Famílias</th></tr></thead><tbody>${rows||`<tr><td colspan="8" class="muted">Nada encontrado.</td></tr>`}</tbody></table></div>`
     :`<div class="panel empty"><h2>Nenhum produto ainda</h2><p>Cole as linhas da sua planilha em “Importar do Excel” ou cadastre um por um.</p></div>`}`;
 }
 
 function inPct(id,v,attrs=''){return `<input class="n" id="${id}" inputmode="decimal" value="${pctIn(v)}" ${attrs}>`;}
 function viewParametros(c){
-  const fr=S.frete;
+  const fr=freteCli(c);const propria=!!c.frete;
   const canalCard=k=>{const cfg=c.canais[k.id]||{};let body='';
     if(k.tipo==='ml'){body=`<div class="row2"><div class="field"><label class="label" for="p_${k.id}_comissao">Taxa padrão %</label>${inPct('p_'+k.id+'_comissao',cfg.comissao,`data-cp="${k.id}.comissao"`)}</div>
       <div class="field"><label class="label" for="p_${k.id}_ads">ADS padrão %</label>${inPct('p_'+k.id+'_ads',cfg.ads,`data-cp="${k.id}.ads"`)}</div></div><p class="note">Valem para anúncios sem taxa própria. A taxa de cada anúncio é editada na tabela de Precificação. Frete pela tabela do Mercado Livre, conforme peso cobrado e faixa de preço.</p>`;}
@@ -394,8 +398,9 @@ function viewParametros(c){
       <div><button onclick="addFaixa('${k.id}')">+ Faixa de preço</button></div>
       <p class="note">Confirme os valores no painel do vendedor. As regras deste canal mudam com frequência.</p>`;}
     return `<section class="panel card"><div class="card-head"><h2>${esc(k.nome)}</h2><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="at_${k.id}" data-ativo="${k.id}" ${cfg.ativo?'checked':''}> Ativo</label></div>${body}</section>`;};
-  const freteT=fr?`<section class="panel card"><div class="card-head"><div><h2>Tabela de frete Mercado Livre</h2><p class="note">Vale para todos os clientes. Referência: ${esc(fr.atualizado||'')}. Edite um valor e saia do campo para salvar.</p></div>
-      <div class="field"><label class="label" for="frAtual">Referência</label><input id="frAtual" value="${esc(fr.atualizado||'')}" style="width:110px"></div></div>
+  const freteT=fr?`<section class="panel card"><div class="card-head"><div><h2>Tabela de frete Mercado Livre</h2><p class="note">${propria?'<b>Tabela própria deste cliente.</b>':'Tabela padrão, usada por todos os clientes sem tabela própria.'} Referência: ${esc(fr.atualizado||'')}. Edite um valor e saia do campo para salvar.</p></div>
+      <div class="field"><label class="label" for="frAtual">Referência</label><input id="frAtual" value="${esc(fr.atualizado||'')}" style="width:110px"></div>
+      ${propria?`<button onclick="upCliente({frete:null})">Usar a tabela padrão</button>`:`<button onclick="upCliente({frete:structuredClone(S.frete)})">Criar tabela própria para este cliente</button>`}</div>
     <div class="scroll"><table class="frete"><thead><tr><th>Peso</th>${fr.faixasPreco.map(f=>`<th class="r">${esc(f.nome)}</th>`).join('')}</tr></thead><tbody>
     ${fr.linhas.map((l,i)=>`<tr><td>${esc(l.nome)}</td>${l.v.map((v,j)=>`<td><input class="n" id="fr_${i}_${j}" inputmode="decimal" value="${n2(v)}" data-fr="${i}.${j}" aria-label="Frete ${esc(l.nome)} ${esc(fr.faixasPreco[j].nome)}"></td>`).join('')}</tr>`).join('')}
     </tbody></table></div></section>`:`<div class="state">Carregando tabela de frete…</div>`;
@@ -405,11 +410,12 @@ function viewParametros(c){
     <div class="field"><label class="label" for="pc_imp">Impostos %</label>${inPct('pc_imp',c.imposto,'data-cn="imposto"')}</div>
     <div class="field"><label class="label" for="pc_desp">Assessoria / operação %</label>${inPct('pc_desp',c.despesas,'data-cn="despesas"')}</div>
     <div class="field"><label class="label" for="pc_marg">Margem padrão %</label>${inPct('pc_marg',c.margem,'data-cn="margem"')}</div>
+    <div class="field"><label class="label" for="pc_agr">Agrupar produtos por</label><select id="pc_agr" data-cagr="1">${Object.entries(ROT).map(([k,v])=>`<option value="${k}"${(c.agrupar||'sku')===k?' selected':''}>${v}</option>`).join('')}</select></div>
     <div class="field"><label class="label" for="pc_emb">Embalagem (R$ por venda)</label><input class="n" id="pc_emb" inputmode="decimal" value="${n2(+c.embalagem||0)}" data-ce="embalagem"></div></div>
-    <p class="note">A embalagem vale para todos os SKUs deste cliente.</p></section>
+    <p class="note">A embalagem vale para todos os produtos deste cliente.</p></section>
   <div class="cards">${CANAIS.map(canalCard).join('')}</div>${freteT}
   <section class="panel card"><h2>Excluir cliente</h2><p class="note">Remove o cliente e todos os produtos dele. Não dá para desfazer.</p>
-    <div>${S.pendente==='delCli'?`<div class="sim"><span>Excluir “${esc(c.nome)}” e ${S.produtos.length} SKUs?</span><button class="danger" onclick="excluirCliente()">Sim, excluir</button><button onclick="S.pendente=null;render()">Cancelar</button></div>`:`<button class="danger" onclick="S.pendente='delCli';render()">Excluir cliente</button>`}</div></section>`;
+    <div>${S.pendente==='delCli'?`<div class="sim"><span>Excluir “${esc(c.nome)}” e ${S.produtos.length} ${Rs()}?</span><button class="danger" onclick="excluirCliente()">Sim, excluir</button><button onclick="S.pendente=null;render()">Cancelar</button></div>`:`<button class="danger" onclick="S.pendente='delCli';render()">Excluir cliente</button>`}</div></section>`;
 }
 
 /* ---------- Eventos ---------- */
@@ -440,6 +446,7 @@ document.addEventListener('change',e=>{
     else{a[f]=val;patch={[f]:val};if(f==='canal'){a.taxa=null;a.ads=null;patch.taxa=null;patch.ads=null;}}
     render();salvarAnuncio(pid,aid,patch);return;}
   if(t.dataset.ativo){upCliente({canais:{[t.dataset.ativo]:{ativo:t.checked}}});return;}
+  if(t.dataset.cagr){upCliente({agrupar:t.value});return;}
   if(t.dataset.ce){const v=parseN(t.value);if(isFinite(v)&&v>=0)upCliente({embalagem:v});else{toast('Valor inválido. Ex.: 0,65');render();}return;}
   if(t.dataset.cn){const k=t.dataset.cn;if(k==='nome'){if(t.value.trim())upCliente({nome:t.value.trim()});return;}
     const v=parseN(t.value);if(isFinite(v))upCliente({[k]:v/100});else{toast('Valor inválido.');render();}return;}
@@ -447,8 +454,9 @@ document.addEventListener('change',e=>{
     upCliente({canais:{[k]:{[f]:t.dataset.tipo==='rs'?v:v/100}}});return;}
   if(t.dataset.fx){const [k,i,f]=t.dataset.fx.split('.');const v=parseN(t.value);if(!isFinite(v)){toast('Valor inválido.');render();return;}
     const fx=structuredClone(c.canais[k].faixas);fx[+i][f]=t.dataset.tipo==='rs'?v:v/100;fx.sort((a,b)=>a.ini-b.ini);upCliente({canais:{[k]:{faixas:fx}}});return;}
-  if(t.dataset.fr||t.id==='frAtual'){const fr=structuredClone(S.frete);
+  if(t.dataset.fr||t.id==='frAtual'){const fr=structuredClone(freteCli(c));
     if(t.id==='frAtual')fr.atualizado=t.value.trim();else{const [i,j]=t.dataset.fr.split('.').map(Number);const v=parseN(t.value);if(!isFinite(v)){toast('Valor inválido.');render();return;}fr.linhas[i].v[j]=v;}
+    if(c.frete){upCliente({frete:fr});return;}
     S.frete=fr;render();gravar('config/freteML',()=>S.db.doc('config/freteML').set(fr));}
 });
 document.addEventListener('click',e=>{
@@ -462,7 +470,7 @@ function remFaixa(k,i){const c=cli();const fx=structuredClone(c.canais[k].faixas
 /* ---------- Anúncios: criar, remover, lote ---------- */
 function novoAnuncio(pid){const c=cli();const p=S.produtos.find(x=>x.id===pid);if(!p)return;
   const canal=canaisAtivos(c).find(k=>k.tipo==='ml')?.id||canaisAtivos(c)[0]?.id||'ml_premium';
-  const aid=novoId('a');const a={canal,mlb:null,familia:null,preco:null,ordem:Math.max(0,...anuncios(p).map(x=>+x.ordem||0))+1};
+  const aid=novoId('a');const ag=c.agrupar;const ehMLB=/^MLB/i.test(String(p.sku||''));const a={canal,mlb:ag==='mlb'&&ehMLB?p.sku:null,familia:ag==='familia'||(ag==='mlb'&&!ehMLB)?p.sku:null,preco:null,ordem:Math.max(0,...anuncios(p).map(x=>+x.ordem||0))+1};
   p.anuncios={...(p.anuncios||{}),[aid]:a};S.fechados.delete(pid);render();salvarAnuncio(pid,aid,a);
   setTimeout(()=>document.getElementById(`f_${pid}_${aid}_mlb`)?.focus(),30);}
 function removerAnuncio(pid,aid){const p=S.produtos.find(x=>x.id===pid);if(!p)return;S.pendente=null;
@@ -516,39 +524,39 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modalRoot').inn
 function editarProduto(id){
   const p=id?S.produtos.find(x=>x.id===id):{sku:'',nome:'',L:0,C:0,P:0,peso:0,cmv:0};if(!p)return;
   const f=(k,lab,v,num=true,cls='')=>`<div class="field ${cls}"><label class="label" for="ep_${k}">${lab}</label><input id="ep_${k}" ${num?'inputmode="decimal" class="num"':''} value="${esc(num?n2(v):v??'')}"></div>`;
-  modal(`<h2>${id?'Editar SKU':'Novo SKU'}</h2>
-  <div class="form-grid">${f('sku','SKU',p.sku,false)}${f('nome','Nome',p.nome,false,'wide')}
+  modal(`<h2>${id?'Editar '+R():'Novo '+R()}</h2>
+  <div class="form-grid">${f('sku',R()==='SKU'?'SKU':'Código ('+R()+')',p.sku,false)}${f('nome','Nome',p.nome,false,'wide')}
   ${f('L','Largura (cm)',p.L)}${f('C','Comprimento (cm)',p.C)}${f('P','Altura (cm)',p.P)}${f('peso','Peso real (kg)',p.peso)}
   ${f('cmv','CMV (R$)',p.cmv)}</div>
-  ${id?`<p class="note">${plural(anuncios(p).length,'anúncio')} neste SKU. Os anúncios são editados na tabela de Precificação.</p>`:'<p class="note">Depois de criar, adicione os anúncios do SKU na aba Precificação, em “+ Anúncio”.</p>'}
+  ${id?`<p class="note">${plural(anuncios(p).length,'anúncio')} neste ${R()}. Os anúncios são editados na tabela de Precificação.</p>`:'<p class="note">Depois de criar, adicione os anúncios na aba Precificação, em “+ Anúncio”.</p>'}
   <div class="toolbar"><div class="grp"><button class="primary" id="epOk">Salvar</button><button onclick="fecharModal()">Cancelar</button></div>
-  ${id?`<div id="epDel" class="sim"><button class="danger" id="epDelBtn">Excluir SKU</button></div>`:''}</div>`);
-  if(id)$('#epDelBtn').onclick=()=>{$('#epDel').innerHTML=`<span>Excluir o SKU e ${plural(anuncios(p).length,'anúncio')}?</span> <button class="danger" id="epDelSim">Sim, excluir</button>`;$('#epDelSim').onclick=()=>excluirProduto(id);};
+  ${id?`<div id="epDel" class="sim"><button class="danger" id="epDelBtn">Excluir ${R()}</button></div>`:''}</div>`);
+  if(id)$('#epDelBtn').onclick=()=>{$('#epDel').innerHTML=`<span>Excluir o ${R()} e ${plural(anuncios(p).length,'anúncio')}?</span> <button class="danger" id="epDelSim">Sim, excluir</button>`;$('#epDelSim').onclick=()=>excluirProduto(id);};
   $('#epOk').onclick=()=>{
     const g=k=>$('#ep_'+k).value;const num=k=>{const v=parseN(g(k));return isFinite(v)?v:0;};
-    const sku=g('sku').trim();if(!sku){toast('Informe o SKU.');return;}
-    if(S.produtos.some(x=>x.sku===sku&&x.id!==id)){toast('Já existe um SKU com esse código.');return;}
+    const sku=g('sku').trim();if(!sku){toast('Informe o código do produto.');return;}
+    if(S.produtos.some(x=>x.sku===sku&&x.id!==id)){toast('Já existe um produto com esse código.');return;}
     const campos={sku,nome:g('nome').trim(),L:num('L'),C:num('C'),P:num('P'),peso:num('peso'),cmv:num('cmv')};
     fecharModal();
-    if(id){Object.assign(p,campos);render();gravar(pPath(id),()=>S.db.doc(pPath(id)).update(campos).then(()=>toast('SKU salvo.')));}
+    if(id){Object.assign(p,campos);render();gravar(pPath(id),()=>S.db.doc(pPath(id)).update(campos).then(()=>toast('Produto salvo.')));}
     else{const nid=novoId('s');const doc={...campos,anuncios:{},ordem:Math.max(0,...S.produtos.map(x=>+x.ordem||0))+1};
-      gravar(pPath(nid),()=>S.db.doc(pPath(nid)).set(doc).then(()=>toast('SKU criado. Adicione os anúncios em Precificação.')));}
+      gravar(pPath(nid),()=>S.db.doc(pPath(nid)).set(doc).then(()=>toast('Produto criado. Adicione os anúncios em Precificação.')));}
   };
 }
 function excluirProduto(id){fecharModal();for(const k of [...S.marcados])if(k.startsWith(id+'|'))S.marcados.delete(k);if(S.sel?.startsWith(id+'|'))S.sel=null;
-  gravar(pPath(id),()=>S.db.doc(pPath(id)).delete().then(()=>toast('SKU excluído.')));}
+  gravar(pPath(id),()=>S.db.doc(pPath(id)).delete().then(()=>toast('Produto excluído.')));}
 
 /* ---------- Importar ---------- */
 const TIPOS={premium:'ml_premium','ml premium':'ml_premium',classico:'ml_classico','clássico':'ml_classico','ml classico':'ml_classico','ml clássico':'ml_classico',shopee:'shopee',tiktok:'tiktok','tiktok shop':'tiktok'};
 function importar(){
   modal(`<h2>Importar do Excel</h2>
-  <div class="field"><label class="label" for="imTipo">O que vai importar</label><select id="imTipo"><option value="sku">SKUs (dados do produto)</option><option value="anu">Anúncios (MLB de cada SKU)</option></select></div>
+  <div class="field"><label class="label" for="imTipo">O que vai importar</label><select id="imTipo"><option value="sku">Produtos (código, nome, medidas, CMV)</option><option value="anu">Anúncios (MLB de cada produto)</option></select></div>
   <p class="note">Copie as linhas da planilha (sem o cabeçalho) e cole abaixo. As colunas devem estar nesta ordem:</p>
   <div class="state num" style="font-size:12px" id="imCols"></div>
   <textarea id="imTxt" rows="9"></textarea>
   <div id="imPrev" class="note"></div>
   <div class="sim"><button class="primary" id="imOk" disabled>Importar</button><button onclick="fecharModal()">Cancelar</button></div>`);
-  const cols={sku:'SKU · Nome · Largura · Comprimento · Altura · Peso (kg) · CMV',anu:'SKU · MLB · Tipo (Premium, Clássico, Shopee ou TikTok) · Família · Preço de venda · Taxa % (opcional)'};
+  const cols={sku:R()+' · Nome · Largura · Comprimento · Altura · Peso (kg) · CMV',anu:R()+' · MLB · Tipo (Premium, Clássico, Shopee ou TikTok) · Família · Preço de venda · Taxa % (opcional)'};
   const ex={sku:'B1.100	Fio Bicolor para som - 100m	25	25	7	1,7	51,52',anu:'B1.100	MLB5483998348	Premium	8396304686571407	133,74	16,5'};
   let linhas=[];
   const prev=()=>{const tp=$('#imTipo').value;const min=tp==='sku'?7:3;linhas=$('#imTxt').value.split(/\r?\n/).map(l=>l.split('\t')).filter(c=>c.length>=min&&c[0].trim());
@@ -573,14 +581,14 @@ function importar(){
           if(ex)acc[ex.id]={...(acc[ex.id]||{}),...pt};else acc[novoId('a')]={...pt,ordem:Math.max(0,...atual.map(a=>+a.ordem||0))+1};ok++;}
         for(const pid in porP)await S.db.doc(pPath(pid)).update({anuncios:porP[pid]});}
     }catch(e){toast(e?.code==='quota_exceeded'?'Limite de armazenamento atingido.':'A importação parou no meio. Confira e tente de novo.');}
-    fecharModal();toast(`${ok} ${tp==='sku'?'SKUs':'anúncios'} importados.`+(falta.length?` ${falta.length} sem SKU cadastrado (${[...new Set(falta)].slice(0,3).join(', ')}).`:'')+(ruim?` ${ruim} com tipo não reconhecido.`:''));};
+    fecharModal();toast(`${ok} ${tp==='sku'?Rs():'anúncios'} importados.`+(falta.length?` ${falta.length} sem produto cadastrado (${[...new Set(falta)].slice(0,3).join(', ')}).`:'')+(ruim?` ${ruim} com tipo não reconhecido.`:''));};
 }
 
 /* ---------- Exportar ---------- */
 async function exportar(){
   const c=cli();const m=+c.margem||0;const linhas=[];
   filtro().forEach(({p,as})=>as.forEach(a=>{const {sug,d,e}=calc(c,p,a,m);const pr=a.promo||{};
-    linhas.push({SKU:p.sku,Produto:p.nome,'Anúncio':a.mlb||'',Família:a.familia||'',Canal:nomeCanal(a.canal),CMV:+p.cmv,'Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),
+    linhas.push({[R()]:p.sku,Produto:p.nome,'Anúncio':a.mlb||'',Família:a.familia||'',Canal:nomeCanal(a.canal),CMV:+p.cmv,'Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),
       'Taxa %':e.comissao??'','Redução R$':+pr.reducao>0?+pr.reducao:'','ADS %':e.ads,
       'Preço sugerido':sug==null?'':+sug.toFixed(2),'Preço de venda':+a.preco>0?+a.preco:'','Margem atual':d?+d.margem.toFixed(4):''});}));
   const nome=`Precificação ${c.nome} - margem ${pctIn(m)}%`;let data,fn;
