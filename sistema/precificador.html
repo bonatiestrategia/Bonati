@@ -331,7 +331,7 @@ function linhaAnuncio(c,p,a,m,hoje,ativosIds){
   const opts=CANAIS.filter(x=>ativosIds.includes(x.id)||x.id===a.canal).map(x=>`<option value="${x.id}"${x.id===a.canal?' selected':''}>${esc(x.nome)}</option>`).join('');
   return `<tr data-row="${esc(key)}" class="${S.sel===key?'sel':''}">
     <td class="ck"><input type="checkbox" id="${fid('ck')}" data-ck="${esc(key)}" ${S.marcados.has(key)?'checked':''} aria-label="Selecionar anúncio ${esc(a.mlb||'')}"></td>
-    <td class="mlbc"><input class="cell txt" id="${fid('mlb')}" ${da('mlb')} value="${esc(a.mlb||'')}" placeholder="MLB…" aria-label="Código do anúncio">${a.upid?`<div class="sub">${esc(a.upid)}</div>`:''}</td>
+    <td class="mlbc"><input class="cell txt" id="${fid('mlb')}" ${da('mlb')} value="${esc(a.mlb||'')}" placeholder="MLB…" aria-label="Código do anúncio"></td>
     <td><input class="cell txt fam" id="${fid('familia')}" ${da('familia')} value="${esc(a.familia||'')}" placeholder="—" aria-label="Família"></td>
     <td><select class="cell-sel" id="${fid('canal')}" ${da('canal')} aria-label="Canal">${opts}</select></td>
     <td class="r"><input class="n cell" style="width:60px" id="${fid('taxa')}" ${da('taxa')} inputmode="decimal" value="${def.tipo==='ml'?pctIn(e.comissao):(a.taxa!=null?pctIn(a.taxa):'')}" placeholder="${def.tipo==='ml'?'':'faixa'}" aria-label="Taxa %"></td>
