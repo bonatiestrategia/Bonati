@@ -226,7 +226,7 @@ const pctIn=v=>v==null||!isFinite(v)?'':(+(v*100).toFixed(4)).toLocaleString('pt
 const parseN=s=>{if(s==null)return NaN;s=String(s).trim().replace(/R\$|\s|%/g,'');if(!s)return NaN;if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');return parseFloat(s);};
 const dataBR=iso=>iso?iso.split('-').reverse().slice(0,2).join('/'):'';
 const dataBRc=iso=>iso?iso.split('-').reverse().join('/'):'';
-const PADRAO={imposto:0.10,despesas:0.057,margem:0.15,canais:{
+const PADRAO={imposto:0.10,despesas:0.057,margem:0.15,embalagem:0,canais:{
   ml_premium:{ativo:true,comissao:0.165,ads:0.04},
   ml_classico:{ativo:true,comissao:0.115,ads:0.04},
   shopee:{ativo:false,ads:0.04,freteFixo:0,faixas:[{ini:0,pct:0.20,fixo:4.5},{ini:80,pct:0.14,fixo:16},{ini:100,pct:0.14,fixo:20},{ini:200,pct:0.14,fixo:26}]},
@@ -251,9 +251,9 @@ const novoId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
 /* ---------- Anúncios: cada SKU tem um conjunto de anúncios (MLB, Shopee, TikTok) ---------- */
 function anuncios(p){return Object.entries(p.anuncios||{}).filter(([,a])=>a).map(([id,a])=>({id,...a})).sort((x,y)=>(+x.ordem||0)-(+y.ordem||0));}
-function vprod(p,a){const ov={};if(a.taxa!=null)ov.comissao=+a.taxa;if(a.ads!=null)ov.ads=+a.ads;if(+a.desc)ov.desconto=+a.desc;
-  return {...p,overrides:{[a.canal]:ov},promoML:a.promo&&+a.promo.reducao>0?{[a.canal]:a.promo}:{}};}
-function calc(c,p,a,m,opt){const vp=vprod(p,a);return {vp,sug:precoSugerido(c,a.canal,vp,S.frete,m,opt),d:+a.preco>0?dre(c,a.canal,vp,S.frete,+a.preco):null,e:cfgEfetiva(c,a.canal,vp)};}
+function vprod(p,a,c){const ov={};if(a.taxa!=null)ov.comissao=+a.taxa;if(a.ads!=null)ov.ads=+a.ads;if(+a.desc)ov.desconto=+a.desc;
+  return {...p,embalagem:c&&c.embalagem!=null?+c.embalagem:+p.embalagem||0,overrides:{[a.canal]:ov},promoML:a.promo&&+a.promo.reducao>0?{[a.canal]:a.promo}:{}};}
+function calc(c,p,a,m,opt){const vp=vprod(p,a,c);return {vp,sug:precoSugerido(c,a.canal,vp,S.frete,m,opt),d:+a.preco>0?dre(c,a.canal,vp,S.frete,+a.preco):null,e:cfgEfetiva(c,a.canal,vp)};}
 function salvarAnuncio(pid,aid,patch){gravar(pPath(pid),()=>S.db.doc(pPath(pid)).update({anuncios:{[aid]:patch}}));}
 function filtro(){const q=S.busca.trim().toLowerCase();
   return S.produtos.map(p=>{const as=anuncios(p);if(!q)return {p,as};
@@ -300,7 +300,6 @@ function viewPrecos(c){
       <button class="tog" data-tog="${pid}" aria-expanded="${aberto}" aria-label="${aberto?'Recolher':'Expandir'} ${esc(p.sku)}">${aberto?'▾':'▸'}</button>
       <span class="sku">${esc(p.sku)}</span><span class="gnome" title="${esc(p.nome)}">${esc(p.nome)}</span>
       <label class="gf">CMV R$ <input class="n cell" id="pf_${pid}_cmv" data-pf="${pid}|cmv" inputmode="decimal" value="${n2(+p.cmv)}"></label>
-      <label class="gf">Emb. R$ <input class="n cell" style="width:62px" id="pf_${pid}_emb" data-pf="${pid}|embalagem" inputmode="decimal" value="${n2(+p.embalagem)}"></label>
       <span class="gf muted">Peso cobrado <b class="num">${n2(pesoCobrado(p))} kg</b></span>
       <span class="gf muted">${total?`${as.length} de ${total} anúncios`:`${as.length} anúncio${as.length===1?'':'s'}`}</span>
       ${promoAtivas?`<span class="chip promo">${promoAtivas} em promoção</span>`:''}
@@ -369,12 +368,12 @@ function viewProdutos(c){
   const lista=filtro();
   const rows=lista.map(({p})=>{const as=anuncios(p);const fams=[...new Set(as.map(a=>a.familia).filter(Boolean))];
     return `<tr data-edit="${esc(p.id)}"><td class="sku">${esc(p.sku)}</td><td class="nome" title="${esc(p.nome)}">${esc(p.nome)}</td>
-    <td class="r num">${[p.L,p.C,p.P].map(v=>n2(+v||0).replace(',00','')).join('×')}</td><td class="r num">${n2(+p.peso)}</td><td class="r num">${brl(+p.cmv)}</td><td class="r num">${brl(+p.embalagem)}</td>
+    <td class="r num">${[p.L,p.C,p.P].map(v=>n2(+v||0).replace(',00','')).join('×')}</td><td class="r num">${n2(+p.peso)}</td><td class="r num">${brl(+p.cmv)}</td>
     <td class="r num">${as.length}</td><td class="num muted fams" title="${esc(fams.join(', '))}">${esc(fams.join(', '))}</td></tr>`;}).join('');
   return `<div class="toolbar"><div><h1>Produtos · ${esc(c.nome)}</h1><p class="sub">${S.produtos.length} SKUs. Clique numa linha para editar os dados do SKU. Os anúncios de cada SKU ficam na aba Precificação.</p></div>
     <div class="grp"><button onclick="importar()">Importar do Excel</button><button class="primary" onclick="editarProduto(null)">+ Novo SKU</button></div></div>
     <div class="toolbar"><input id="inBusca" type="search" placeholder="Buscar SKU, nome, MLB ou família" value="${esc(S.busca)}" style="width:290px"></div>
-    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>SKU</th><th>Produto</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Embalagem</th><th class="r">Anúncios</th><th>Famílias</th></tr></thead><tbody>${rows||`<tr><td colspan="8" class="muted">Nada encontrado.</td></tr>`}</tbody></table></div>`
+    ${S.produtos.length?`<div class="panel scroll"><table><thead><tr><th>SKU</th><th>Produto</th><th class="r">L×C×P (cm)</th><th class="r">Peso (kg)</th><th class="r">CMV</th><th class="r">Anúncios</th><th>Famílias</th></tr></thead><tbody>${rows||`<tr><td colspan="8" class="muted">Nada encontrado.</td></tr>`}</tbody></table></div>`
     :`<div class="panel empty"><h2>Nenhum produto ainda</h2><p>Cole as linhas da sua planilha em “Importar do Excel” ou cadastre um por um.</p></div>`}`;
 }
 
@@ -405,7 +404,9 @@ function viewParametros(c){
     <div class="field"><label class="label" for="pc_nome">Nome</label><input id="pc_nome" value="${esc(c.nome)}" data-cn="nome"></div>
     <div class="field"><label class="label" for="pc_imp">Impostos %</label>${inPct('pc_imp',c.imposto,'data-cn="imposto"')}</div>
     <div class="field"><label class="label" for="pc_desp">Assessoria / operação %</label>${inPct('pc_desp',c.despesas,'data-cn="despesas"')}</div>
-    <div class="field"><label class="label" for="pc_marg">Margem padrão %</label>${inPct('pc_marg',c.margem,'data-cn="margem"')}</div></div></section>
+    <div class="field"><label class="label" for="pc_marg">Margem padrão %</label>${inPct('pc_marg',c.margem,'data-cn="margem"')}</div>
+    <div class="field"><label class="label" for="pc_emb">Embalagem (R$ por venda)</label><input class="n" id="pc_emb" inputmode="decimal" value="${n2(+c.embalagem||0)}" data-ce="embalagem"></div></div>
+    <p class="note">A embalagem vale para todos os SKUs deste cliente.</p></section>
   <div class="cards">${CANAIS.map(canalCard).join('')}</div>${freteT}
   <section class="panel card"><h2>Excluir cliente</h2><p class="note">Remove o cliente e todos os produtos dele. Não dá para desfazer.</p>
     <div>${S.pendente==='delCli'?`<div class="sim"><span>Excluir “${esc(c.nome)}” e ${S.produtos.length} SKUs?</span><button class="danger" onclick="excluirCliente()">Sim, excluir</button><button onclick="S.pendente=null;render()">Cancelar</button></div>`:`<button class="danger" onclick="S.pendente='delCli';render()">Excluir cliente</button>`}</div></section>`;
@@ -439,6 +440,7 @@ document.addEventListener('change',e=>{
     else{a[f]=val;patch={[f]:val};if(f==='canal'){a.taxa=null;a.ads=null;patch.taxa=null;patch.ads=null;}}
     render();salvarAnuncio(pid,aid,patch);return;}
   if(t.dataset.ativo){upCliente({canais:{[t.dataset.ativo]:{ativo:t.checked}}});return;}
+  if(t.dataset.ce){const v=parseN(t.value);if(isFinite(v)&&v>=0)upCliente({embalagem:v});else{toast('Valor inválido. Ex.: 0,65');render();}return;}
   if(t.dataset.cn){const k=t.dataset.cn;if(k==='nome'){if(t.value.trim())upCliente({nome:t.value.trim()});return;}
     const v=parseN(t.value);if(isFinite(v))upCliente({[k]:v/100});else{toast('Valor inválido.');render();}return;}
   if(t.dataset.cp){const [k,f]=t.dataset.cp.split('.');const v=parseN(t.value);if(!isFinite(v)){toast('Valor inválido.');render();return;}
@@ -512,12 +514,12 @@ function modal(html){$('#modalRoot').innerHTML=`<div class="overlay" onclick="if
 function fecharModal(){$('#modalRoot').innerHTML='';}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modalRoot').innerHTML)fecharModal();});
 function editarProduto(id){
-  const p=id?S.produtos.find(x=>x.id===id):{sku:'',nome:'',L:0,C:0,P:0,peso:0,cmv:0,embalagem:0};if(!p)return;
+  const p=id?S.produtos.find(x=>x.id===id):{sku:'',nome:'',L:0,C:0,P:0,peso:0,cmv:0};if(!p)return;
   const f=(k,lab,v,num=true,cls='')=>`<div class="field ${cls}"><label class="label" for="ep_${k}">${lab}</label><input id="ep_${k}" ${num?'inputmode="decimal" class="num"':''} value="${esc(num?n2(v):v??'')}"></div>`;
   modal(`<h2>${id?'Editar SKU':'Novo SKU'}</h2>
   <div class="form-grid">${f('sku','SKU',p.sku,false)}${f('nome','Nome',p.nome,false,'wide')}
   ${f('L','Largura (cm)',p.L)}${f('C','Comprimento (cm)',p.C)}${f('P','Altura (cm)',p.P)}${f('peso','Peso real (kg)',p.peso)}
-  ${f('cmv','CMV (R$)',p.cmv)}${f('embalagem','Embalagem (R$)',p.embalagem)}</div>
+  ${f('cmv','CMV (R$)',p.cmv)}</div>
   ${id?`<p class="note">${plural(anuncios(p).length,'anúncio')} neste SKU. Os anúncios são editados na tabela de Precificação.</p>`:'<p class="note">Depois de criar, adicione os anúncios do SKU na aba Precificação, em “+ Anúncio”.</p>'}
   <div class="toolbar"><div class="grp"><button class="primary" id="epOk">Salvar</button><button onclick="fecharModal()">Cancelar</button></div>
   ${id?`<div id="epDel" class="sim"><button class="danger" id="epDelBtn">Excluir SKU</button></div>`:''}</div>`);
@@ -526,7 +528,7 @@ function editarProduto(id){
     const g=k=>$('#ep_'+k).value;const num=k=>{const v=parseN(g(k));return isFinite(v)?v:0;};
     const sku=g('sku').trim();if(!sku){toast('Informe o SKU.');return;}
     if(S.produtos.some(x=>x.sku===sku&&x.id!==id)){toast('Já existe um SKU com esse código.');return;}
-    const campos={sku,nome:g('nome').trim(),L:num('L'),C:num('C'),P:num('P'),peso:num('peso'),cmv:num('cmv'),embalagem:num('embalagem')};
+    const campos={sku,nome:g('nome').trim(),L:num('L'),C:num('C'),P:num('P'),peso:num('peso'),cmv:num('cmv')};
     fecharModal();
     if(id){Object.assign(p,campos);render();gravar(pPath(id),()=>S.db.doc(pPath(id)).update(campos).then(()=>toast('SKU salvo.')));}
     else{const nid=novoId('s');const doc={...campos,anuncios:{},ordem:Math.max(0,...S.produtos.map(x=>+x.ordem||0))+1};
@@ -546,10 +548,10 @@ function importar(){
   <textarea id="imTxt" rows="9"></textarea>
   <div id="imPrev" class="note"></div>
   <div class="sim"><button class="primary" id="imOk" disabled>Importar</button><button onclick="fecharModal()">Cancelar</button></div>`);
-  const cols={sku:'SKU · Nome · Largura · Comprimento · Altura · Peso (kg) · CMV · Embalagem',anu:'SKU · MLB · Tipo (Premium, Clássico, Shopee ou TikTok) · Família · Preço de venda · Taxa % (opcional)'};
-  const ex={sku:'B1.100	Fio Bicolor para som - 100m	25	25	7	1,7	51,52	0,65',anu:'B1.100	MLB5483998348	Premium	8396304686571407	133,74	16,5'};
+  const cols={sku:'SKU · Nome · Largura · Comprimento · Altura · Peso (kg) · CMV',anu:'SKU · MLB · Tipo (Premium, Clássico, Shopee ou TikTok) · Família · Preço de venda · Taxa % (opcional)'};
+  const ex={sku:'B1.100	Fio Bicolor para som - 100m	25	25	7	1,7	51,52',anu:'B1.100	MLB5483998348	Premium	8396304686571407	133,74	16,5'};
   let linhas=[];
-  const prev=()=>{const tp=$('#imTipo').value;const min=tp==='sku'?8:3;linhas=$('#imTxt').value.split(/\r?\n/).map(l=>l.split('\t')).filter(c=>c.length>=min&&c[0].trim());
+  const prev=()=>{const tp=$('#imTipo').value;const min=tp==='sku'?7:3;linhas=$('#imTxt').value.split(/\r?\n/).map(l=>l.split('\t')).filter(c=>c.length>=min&&c[0].trim());
     $('#imPrev').textContent=linhas.length?`${linhas.length} linhas prontas. Primeira: ${linhas[0].slice(0,3).join(' · ')}`:'Nenhuma linha válida ainda. Confira se copiou as colunas do Excel.';$('#imOk').disabled=!linhas.length;};
   const tipo=()=>{const tp=$('#imTipo').value;$('#imCols').textContent=cols[tp];$('#imTxt').placeholder=ex[tp];prev();};
   $('#imTipo').onchange=tipo;$('#imTxt').addEventListener('input',prev);tipo();
@@ -558,7 +560,7 @@ function importar(){
     const bySku=Object.fromEntries(S.produtos.map(p=>[p.sku,p]));let ordem=Math.max(0,...S.produtos.map(p=>+p.ordem||0));let ok=0,falta=[],ruim=0;
     try{
       if(tp==='sku'){for(const c of linhas){const sku=c[0].trim();const ex=bySku[sku];
-        const campos={sku,nome:(c[1]||'').trim(),L:N(c[2]),C:N(c[3]),P:N(c[4]),peso:N(c[5]),cmv:N(c[6]),embalagem:N(c[7])};
+        const campos={sku,nome:(c[1]||'').trim(),L:N(c[2]),C:N(c[3]),P:N(c[4]),peso:N(c[5]),cmv:N(c[6])};
         if(ex)await S.db.doc(pPath(ex.id)).update(campos);else{const nid=novoId('s');await S.db.doc(pPath(nid)).set({...campos,anuncios:{},ordem:++ordem});}
         ok++;$('#imPrev').textContent=`Importando… ${ok}/${linhas.length}`;}}
       else{const porP={};
@@ -578,7 +580,7 @@ function importar(){
 async function exportar(){
   const c=cli();const m=+c.margem||0;const linhas=[];
   filtro().forEach(({p,as})=>as.forEach(a=>{const {sug,d,e}=calc(c,p,a,m);const pr=a.promo||{};
-    linhas.push({SKU:p.sku,Produto:p.nome,'Anúncio':a.mlb||'',Família:a.familia||'',Canal:nomeCanal(a.canal),CMV:+p.cmv,Embalagem:+p.embalagem,'Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),
+    linhas.push({SKU:p.sku,Produto:p.nome,'Anúncio':a.mlb||'',Família:a.familia||'',Canal:nomeCanal(a.canal),CMV:+p.cmv,'Peso cobrado (kg)':+pesoCobrado(p).toFixed(3),
       'Taxa %':e.comissao??'','Redução R$':+pr.reducao>0?+pr.reducao:'','ADS %':e.ads,
       'Preço sugerido':sug==null?'':+sug.toFixed(2),'Preço de venda':+a.preco>0?+a.preco:'','Margem atual':d?+d.margem.toFixed(4):''});}));
   const nome=`Precificação ${c.nome} - margem ${pctIn(m)}%`;let data,fn;
